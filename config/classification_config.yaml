@@ -1,0 +1,67 @@
+# config/classification_config.yaml
+training:
+  seed: 42
+  num_epochs: 3
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  logging_steps: 100
+  eval_steps: 200
+  early_stopping_patience: 5
+  early_stopping_min_delta: 0.001
+  max_grad_norm: 1.0
+  num_trials: 10
+  n_jobs: 2 # Modified: Now it runs in parallel using Optuna
+  n_startup_trials: 5
+  fp16: true
+  optimizer_type: "adamw"
+  learning_rate: 2.0e-5 # Keep learning rate as in paper
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+
+data:
+  csv_path: "sample_m.csv"  # !CHANGE THIS! to your classification data path
+  train_ratio: 0.8
+  max_length: 512
+  text_column: "text"  # !CHANGE THIS! to your text column name
+  label_column: "rating"  # !CHANGE THIS! to your label column name
+  num_workers: 2 # Modified: uses Optuna.
+
+model:
+  name: "" # Keep empty here, pass path to the best embeddings!
+  type: "pretrained"
+  stage: "classification"
+  num_labels: 5 # Number of classes
+  hidden_dropout_prob: 0.1 # Add dropout
+  attention_probs_dropout_prob: 0.1 # Add dropout
+
+hyperparameters:
+    learning_rate:
+        type: "log"
+        min: 1.0e-5
+        max: 3.0e-5
+    weight_decay:
+        type: "float"
+        min: 0.0
+        max: 0.1
+    hidden_dropout_prob: # Add dropout tuning
+        type: "float"
+        min: 0.0
+        max: 0.3
+    attention_probs_dropout_prob: # Add dropout tuning
+        type: "float"
+        min: 0.0
+        max: 0.3
+resources:
+  max_memory_gb: 22.5 # DO NOT CHANGE
+  gpu_memory_gb: 10.0
+  garbage_collection_threshold: 0.7
+  max_split_size_mb: 2048
+  max_time_hours: 24
+  cache_cleanup_days: 7
+
+output:
+  dir: "outputs_classification"  # !CHANGE THIS! to your desired output directory
+  storage_dir: "outputs_classification/storage"
+  save_model: true
+  save_optimizer: false
+  save_scheduler: false
