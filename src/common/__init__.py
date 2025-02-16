@@ -1,12 +1,13 @@
-# src/common/__init__.py (Modified)
+# src/common/__init__.py
 """Manager access layer to prevent circular imports."""
-import yaml  # Import yaml here
+
+from __future__ import annotations
 from pathlib import Path
-import torch.multiprocessing as mp #For shared memory
+import yaml
 
 # --- Load Configuration (Once, at import time) ---
 try:
-    with open("config/embedding_config.yaml", "r") as f:
+    with open("config/embedding_config.yaml", "r") as f:  # Correct path
         _config = yaml.safe_load(f)
 except FileNotFoundError:
     raise FileNotFoundError("config/embedding_config.yaml not found.  Please ensure the config file exists.")
@@ -15,7 +16,7 @@ except yaml.YAMLError as e:
 
 # --- Shared Tokenizer (Placeholder) ---
 _shared_tokenizer = None
-_tokenizer_lock = mp.Lock()  # Lock for thread safety
+_tokenizer_lock = __import__('multiprocessing').Lock()
 
 
 def get_amp_manager():
@@ -70,14 +71,17 @@ def get_tokenizer_manager():
     from src.common.managers.tokenizer_manager import TokenizerManager
     return TokenizerManager()
 
+#Corrected config passing
 def get_worker_manager():
     from src.common.managers.worker_manager import WorkerManager
-    return WorkerManager(config=_config, study_name="embedding_study", storage_url = f"sqlite:///{Path(_config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60") # Pass config, study name and storage
+    return WorkerManager(n_jobs= _config['training']['n_jobs'], config=_config, study_name="embedding_study", storage_url = f"sqlite:///{Path(_config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60")
 
+#Corrected config passing
 def get_wandb_manager():
     from src.common.managers.wandb_manager import WandbManager
     return WandbManager(_config, "embedding_study")
 
+#Corrected config passing
 def get_optuna_manager():
     from src.common.managers.optuna_manager import OptunaManager
     return OptunaManager(study_name="embedding_study", config=_config, storage_dir=Path(_config['output']['dir']) / 'storage')
@@ -92,6 +96,7 @@ def get_shared_tokenizer():
     """Get the shared tokenizer instance."""
     with _tokenizer_lock:
         return _shared_tokenizer
+
 __all__ = [
     'get_amp_manager',
     'get_batch_manager',
