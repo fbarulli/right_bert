@@ -1,4 +1,4 @@
-# src/common/managers/storage_manager.py
+# src/common/managers/storage_manager.py (FINAL CORRECTED)
 from __future__ import annotations
 import sqlite3
 import contextlib
@@ -18,13 +18,15 @@ class StorageManager(BaseManager):
 
     def __init__(self, storage_dir: Path, config: Optional[Dict[str, Any]] = None):
         """Initialize with storage directory."""
-        super().__init__(config)
-        self.storage_dir = storage_dir
+        self.storage_dir = storage_dir  # Set *before* calling super().__init__
         self.storage_path = self.storage_dir / 'optuna.db'
         self.lock_path = self.storage_dir / 'optuna.lock'
         self.history_path = self.storage_dir / 'trial_history.json'
         self.trials_dir = self.storage_dir / "trials"
         self.profiler_dir = self.storage_dir / 'profiler'
+        super().__init__(config) # Now it's safe to call super.
+
+
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""

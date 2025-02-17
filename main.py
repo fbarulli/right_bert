@@ -1,4 +1,4 @@
-# main.py
+# main.py (CORRECTED)
 import logging
 import os
 import traceback
@@ -7,6 +7,7 @@ from typing import Dict, Any
 
 import optuna
 
+# Corrected absolute imports:
 from src.common.utils import setup_logging, seed_everything, load_yaml_config
 from src.common import (
     get_data_manager,
@@ -19,9 +20,9 @@ from src.common import (
     get_shared_tokenizer,
     set_shared_tokenizer
 )
-from src.embedding.models import embedding_model_factory
+from src.embedding.models import embedding_model_factory  # Corrected import
 from src.embedding.embedding_training import train_embeddings
-from src.common.study.objective_factory import ObjectiveFactory
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +46,7 @@ def train_model(config: Dict[str, Any]) -> None:
             tokenizer = tokenizer_manager.get_worker_tokenizer(0, config['model']['name'])
             set_shared_tokenizer(tokenizer)
             train_loader, val_loader, train_dataset, val_dataset = data_manager.create_dataloaders(
-                data_path=Path(config['data']['csv_path']),
-                tokenizer=tokenizer,
-                max_length=config['data']['max_length'],
-                batch_size=config['training']['batch_size'],
-                train_ratio=config['data']['train_ratio'],
-                is_embedding=True,
-                mask_prob=config['data']['embedding_mask_probability'],
-                max_predictions=config['data']['max_predictions'],
-                max_span_length=config['data']['max_span_length'],
-                num_workers=config['training']['num_workers']
+                config
             )
 
             model = embedding_model_factory(config)
@@ -100,7 +92,7 @@ def objective(trial):
 def main():
     """Main entry point."""
     try:
-        from src.common.tensorflow_init import init
+        from src.common.tensorflow_init import init # Corrected import
     except Exception as e:
         print("tf init failed", e)
     try:
@@ -128,7 +120,7 @@ def main():
         logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise
     finally:
-        from src.common.resource.resource_initializer import ResourceInitializer
+        from src.common.resource.resource_initializer import ResourceInitializer # Corrected import
         logger.info("Cleaning up resources...")
         ResourceInitializer.cleanup_process()
 
