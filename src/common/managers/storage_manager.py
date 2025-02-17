@@ -1,4 +1,4 @@
-# src/common/managers/storage_manager.py (FINAL CORRECTED)
+# src/common/managers/storage_manager.py (CORRECTED)
 from __future__ import annotations
 import sqlite3
 import contextlib
@@ -9,6 +9,7 @@ import json
 from typing import Dict, Any, Optional
 import optuna
 from optuna.samplers import TPESampler
+import shutil  # Import shutil
 
 from .base_manager import BaseManager
 logger = logging.getLogger(__name__)

@@ -1,4 +1,4 @@
-# src/common/process/worker_utils.py
+# src/common/process/worker_utils.py (CORRECTED)
 """Worker process utilities for parallel training."""
 
 import logging
@@ -12,11 +12,12 @@ import multiprocessing as mp
 from typing import Dict, Any, Optional, Tuple
 import torch
 
-from src.common import get_cuda_manager
-from src.common.study.objective_factory import ObjectiveFactory
+# DELAYED imports to avoid circular dependencies
+# from src.common import get_cuda_manager
+# from src.common.study.objective_factory import ObjectiveFactory
 from src.common.process.process_init import (
     initialize_process,
-    cleanup_process_resources
+    cleanup_process
 )
 from src.common.process.process_utils import (
     set_process_name,
@@ -91,6 +92,7 @@ def run_worker(
 
                 logger.info("\n=== Initializing CUDA ===")
                 try:
+                    from src.common.managers import get_cuda_manager #DELAYED IMPORT
                     cuda_manager = get_cuda_manager()
                     cuda_manager.setup(config)
                     logger.info(f"CUDA initialized successfully for process {current_pid}")
@@ -101,6 +103,7 @@ def run_worker(
 
                 try:
                     logger.info("\n=== Creating ObjectiveFactory ===")
+                    from src.common.study.objective_factory import ObjectiveFactory #DELAYED
                     factory = ObjectiveFactory(config, output_path)
 
                     logger.info(f"\n=== Executing Trial {trial_info['number']} ===")
@@ -121,18 +124,18 @@ def run_worker(
 
                 finally:
                     logger.info(f"Cleaning up resources for trial {trial_info['number']}")
-                    cleanup_process_resources()
+                    cleanup_process() #fixed
 
             except Exception as e:
                 logger.error(f"Error in trial setup: {str(e)}")
                 logger.error(f"Traceback:\n{traceback.format_exc()}")
                 if 'trial_number' in trial_data:
                         out_queue.put((trial_data['trial_number'], None, str(e)))
-                cleanup_process_resources()
+                cleanup_process() #fixed
     except Exception as e:
         logger.error(f"Worker {worker_id} failed: {str(e)}")
         logger.error(f"Traceback:\n{traceback.format_exc()}")
     finally:
         logger.info(f"\n=== Worker {worker_id} Shutting Down ===")
-        cleanup_process_resources()
+        cleanup_process() #fixed
         logger.info(f"Worker {worker_id} cleanup complete")

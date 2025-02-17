@@ -92,7 +92,7 @@ def objective(trial):
 def main():
     """Main entry point."""
     try:
-        from src.common.tensorflow_init import init # Corrected import
+        import src.common.tensorflow_init  # Corrected: Just import
     except Exception as e:
         print("tf init failed", e)
     try:

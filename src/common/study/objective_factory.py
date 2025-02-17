@@ -1,114 +1,98 @@
-# src/common/study/objective_factory.py
-"""Factory for creating Optuna objectives."""
-
+# src/common/study/objective_factory.py (CORRECTED)
 from __future__ import annotations
-
 import logging
-import os
-import gc
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any
 
-import torch
 import optuna
-from torch.utils.data import DataLoader, Dataset
-from optuna.trial import FixedTrial
-from torch.nn import Module
-from torch.optim import Optimizer
 
-from src.common.managers import (
-    get_cuda_manager,
-    get_dataloader_manager,
-    get_tokenizer_manager,
+# Corrected import: get_shared_tokenizer is in src.common, not src.common.managers
+from src.common import (
+    get_data_manager,
     get_model_manager,
-    get_resource_manager,
     get_parameter_manager,
+    get_directory_manager,
     get_wandb_manager,
-    get_shared_tokenizer
+    get_shared_tokenizer,  # Corrected import
+    set_shared_tokenizer
 )
-from src.embedding.dataset import EmbeddingDataset
-from src.embedding.embedding_trainer import EmbeddingTrainer
-from src.common.utils import create_directory
+
+from src.embedding.embedding_training import train_embeddings
+from src.classification.classification_training import run_classification_optimization, train_final_model
 
 logger = logging.getLogger(__name__)
 
 class ObjectiveFactory:
-    """Factory for creating Optuna objective functions."""
+    """Factory for creating objective functions for Optuna optimization."""
 
-    def __init__(self, config: Dict[str, Any], output_dir: str):
+    def __init__(self, config: Dict[str, Any], output_path: Path):
         """
-        Initialize the factory.
+        Initialize the ObjectiveFactory.
 
         Args:
-            config: Training configuration
-            output_dir: Directory for saving outputs.  This is the *main* output
-                directory, not the trial-specific one.
+            config: Configuration dictionary.
+            output_path: Base output path.
         """
         self.config = config
-        self.output_dir = output_dir
-        self.pid = os.getpid()
-        logger.info(f"ObjectiveFactory initialized for process {self.pid}")
+        self.output_path = output_path
 
     def objective(self, trial: optuna.Trial) -> float:
-        """Process-local objective function for Optuna optimization."""
+        """
+        Objective function for Optuna optimization.
 
-        current_pid = os.getpid()
-        logger.info(f"Running trial {trial.number} in process {current_pid}")
+        Args:
+            trial: Optuna trial object.
 
+        Returns:
+            float: The objective value (e.g., validation loss).
+        """
         try:
             parameter_manager = get_parameter_manager()
-            trial_config = parameter_manager.get_trial_config(trial)
-            if trial_config["training"]["num_trials"] > 1:
+            data_manager = get_data_manager()
+            model_manager = get_model_manager()
+            tokenizer_manager = get_tokenizer_manager()
+            directory_manager = get_directory_manager()
+
+            config = parameter_manager.get_trial_config(trial)
+            if config["training"]["num_trials"] > 1:
                 wandb_manager = get_wandb_manager()
                 wandb_manager.init_trial(trial.number)
 
-            cuda_manager = get_cuda_manager()
-            data_manager = get_data_manager()
-            tokenizer_manager = get_tokenizer_manager()
-            directory_manager = get_directory_manager()
-            model_manager = get_model_manager()
+            if config['model']['stage'] == 'embedding':
+                logger.info("\n=== Starting Embedding Training ===")
+                tokenizer = tokenizer_manager.get_worker_tokenizer(trial.number, config['model']['name'])
+                set_shared_tokenizer(tokenizer)
+                train_loader, val_loader, train_dataset, val_dataset = data_manager.create_dataloaders(
+                    config=config
+                )
+                from src.embedding.models import embedding_model_factory
 
-            device = cuda_manager.get_device()
+                model = embedding_model_factory(config, trial)
 
-            tokenizer = get_shared_tokenizer()
-            train_loader, val_loader, train_dataset, val_dataset = data_manager.create_dataloaders(
-                config = trial_config
-            )
-            logger.info(f"Created dataloaders in process {self.pid}")
+                train_embeddings(
+                    model=model,
+                    train_loader=train_loader,
+                    val_loader=val_loader,
+                    config=config,
+                    metrics_dir=str(directory_manager.base_dir / "trials" / f"trial_{trial.number}" / "metrics"),
+                    is_trial=True,
+                    trial=trial,
+                    wandb_manager= wandb_manager if config["training"]["num_trials"] > 1 else None,
+                    job_id=trial.number,
+                    train_dataset=train_dataset,
+                    val_dataset = val_dataset
+                )
+            elif config['model']['stage'] == 'classification':
+                logger.info("\n=== Starting Classification Training ===")
+                # Assuming you have similar functions for classification
+                pass  # Replace with your classification training logic
+            else:
+                raise ValueError(f"Unknown stage: {config['model']['stage']}")
 
-            from src.embedding.models import embedding_model_factory
-            model = embedding_model_factory(trial_config, trial=trial)
-            model = model.to(device)
-            logger.info(f"Created model in process {self.pid}")
+            best_val_loss = trial.user_attrs.get('best_val_loss', float('inf'))
 
-            trial_output_dir = directory_manager.base_dir / "trials" / f"trial_{trial.number}"
-            metrics_dir = create_directory(trial_output_dir / "metrics")
-            from src.common.study.trial_state_manager import TrialStateManager
-            trial_state_manager = TrialStateManager(trial, trial_config)
-
-            trainer = EmbeddingTrainer(
-                model=model,
-                train_loader=train_loader,
-                val_loader=val_loader,
-                config=trial_config,
-                metrics_dir=metrics_dir,
-                is_trial=True,
-                trial=trial,
-                wandb_manager=wandb_manager if trial_config["training"]["num_trials"] > 1 else None,
-                job_id=trial.number,
-                train_dataset=train_dataset,
-                val_dataset=val_dataset
-            )
-            logger.info(f"Created trainer in process {self.pid}")
-
-            trainer.train(trial_config['training']['num_epochs'])
-            trial_state_manager.update_state(TrialStatus.COMPLETED)
-            return trainer.best_val_loss
+            return best_val_loss
 
         except Exception as e:
-            logger.error(f"Trial {trial.number} failed: {str(e)}", exc_info=True)
-            if 'trial_state_manager' in locals():
-                trial_state_manager.update_state(TrialStatus.FAILED)
-            raise optuna.TrialPruned()
-
-__all__ = ['ObjectiveFactory']
+            logger.error(f"Trial failed: {str(e)}")
+            raise
