@@ -21,70 +21,100 @@ _tokenizer_lock = __import__('multiprocessing').Lock()
 
 def get_amp_manager():
     from src.common.managers.amp_manager import AMPManager
-    return AMPManager()
+    manager = AMPManager()
+    manager.ensure_initialized(_config) # Initialize with config
+    return manager
 
 def get_batch_manager():
     from src.common.managers.batch_manager import BatchManager
-    return BatchManager(get_cuda_manager(), get_tensor_manager())
+    manager =  BatchManager()
+    manager.ensure_initialized(_config) # Initialize, and pass managers
+    return manager
 
 def get_cuda_manager():
     from src.common.managers.cuda_manager import CUDAManager
-    return CUDAManager()
+    manager =  CUDAManager()
+    manager.ensure_initialized(_config) # Initialize
+    return manager
 
 def get_data_manager():
     from src.common.managers.data_manager import DataManager
-    return DataManager()
+    manager =  DataManager()
+    manager.ensure_initialized(_config)
+    return manager
 
 def get_dataloader_manager():
     from src.common.managers.dataloader_manager import DataLoaderManager
-    return DataLoaderManager()
+    manager =  DataLoaderManager()
+    manager.ensure_initialized(_config)
+    return manager
 
 def get_directory_manager():
     from src.common.managers.directory_manager import DirectoryManager
-    return DirectoryManager(Path(_config['output']['dir']))
+    manager =  DirectoryManager(Path(_config['output']['dir']))
+    manager.ensure_initialized(_config)  # Initialize
+    return manager
 
 def get_metrics_manager():
     from src.common.managers.metrics_manager import MetricsManager
-    return MetricsManager()
+    manager =  MetricsManager()
+    manager.ensure_initialized(_config)
+    return manager
 
 def get_model_manager():
     from src.common.managers.model_manager import ModelManager
-    return ModelManager()
+    manager =  ModelManager()
+    manager.ensure_initialized(_config)
+    return manager
 
 def get_parameter_manager():
     from src.common.managers.parameter_manager import ParameterManager
-    return ParameterManager(_config)
+    manager =  ParameterManager(_config)  # Already takes config in __init__
+    manager.ensure_initialized(_config)
+    return manager
 
 def get_resource_manager():
     from src.common.managers.resource_manager import ProcessResourceManager
-    return ProcessResourceManager(_config)
+    manager =  ProcessResourceManager(_config)  # Already takes config in __init__
+    manager.ensure_initialized(_config)
+    return manager
 
 def get_storage_manager():
     from src.common.managers.storage_manager import StorageManager
-    return StorageManager(Path(_config['output']['storage_dir']))
+    manager =  StorageManager(Path(_config['output']['storage_dir']))  # Already takes storage_dir
+    manager.ensure_initialized(_config)
+    return manager
 
 def get_tensor_manager():
     from src.common.managers.tensor_manager import TensorManager
-    return TensorManager(get_cuda_manager())
+    manager =  TensorManager()
+    manager.ensure_initialized(_config)
+    return manager
 
 def get_tokenizer_manager():
     from src.common.managers.tokenizer_manager import TokenizerManager
-    return TokenizerManager()
+    manager =  TokenizerManager()
+    manager.ensure_initialized(_config)
+    return manager
 
-#Corrected config passing
 def get_worker_manager():
     from src.common.managers.worker_manager import WorkerManager
-    return WorkerManager(n_jobs= _config['training']['n_jobs'], config=_config, study_name="embedding_study", storage_url = f"sqlite:///{Path(_config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60")
+    manager =  WorkerManager(config=_config, study_name="embedding_study", storage_url = f"sqlite:///{Path(_config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60")
+    manager.ensure_initialized(_config)
+    return manager
 
-#Corrected config passing
 def get_wandb_manager():
     from src.common.managers.wandb_manager import WandbManager
-    return WandbManager(_config, "embedding_study")
+    manager =  WandbManager(_config, "embedding_study")
+    manager.ensure_initialized(_config)
+    return manager
 
-#Corrected config passing
 def get_optuna_manager():
     from src.common.managers.optuna_manager import OptunaManager
-    return OptunaManager(study_name="embedding_study", config=_config, storage_dir=Path(_config['output']['dir']) / 'storage')
+    manager = OptunaManager(study_name="embedding_study", config=_config, storage_dir=Path(_config['output']['dir']) / 'storage')
+    manager.ensure_initialized(_config)
+    return manager
+
 
 def set_shared_tokenizer(tokenizer):
     """Set the shared tokenizer instance."""
@@ -96,7 +126,6 @@ def get_shared_tokenizer():
     """Get the shared tokenizer instance."""
     with _tokenizer_lock:
         return _shared_tokenizer
-
 __all__ = [
     'get_amp_manager',
     'get_batch_manager',

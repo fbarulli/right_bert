@@ -4,7 +4,6 @@ import logging
 import os
 import weakref
 from typing import Dict, Type, ClassVar, Any, Optional
-from .base_manager import BaseManager  # CORRECTED: Relative import
 
 
 logger = logging.getLogger(__name__)
