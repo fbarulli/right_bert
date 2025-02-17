@@ -20,9 +20,7 @@ import matplotlib.pyplot as plt
 from transformers import get_linear_schedule_with_warmup
 
 from src.common.managers.metrics_manager import MetricsManager, MetricsLogger
-from src.common.managers import get_storage_manager, get_wandb_manager
-
-storage_manager = get_storage_manager()
+from src.common.managers import get_factory, get_storage_manager, get_wandb_manager
 
 logger = logging.getLogger(__name__)
 
@@ -61,20 +59,10 @@ class BaseTrainer:
             train_dataset (Optional[Any]): Training dataset (for memory cleanup).
             val_dataset (Optional[Any]): Validation dataset (for memory cleanup).
         """
-        from src.common.managers import (
-            get_cuda_manager,
-            get_batch_manager,
-            get_amp_manager,
-            get_tokenizer_manager,
-            get_metrics_manager
-        )
-
-        cuda_manager = get_cuda_manager()
-        batch_manager = get_batch_manager()
-        amp_manager = get_amp_manager()
-        tokenizer_manager = get_tokenizer_manager()
-        metrics_manager = get_metrics_manager()
-
+        # Get factory instance
+        self.factory = get_factory()
+        
+        # Initialize model and config
         self.model = model
         self.config = config
         self.metrics_dir = metrics_dir
@@ -85,14 +73,13 @@ class BaseTrainer:
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
 
-        self._cuda_manager = cuda_manager
-        self._batch_manager = batch_manager
-        self._amp_manager = amp_manager
-        self._tokenizer_manager = tokenizer_manager
-        self._metrics_manager = metrics_manager
-
-
-        self.storage_manager = storage_manager
+        # Get managers from factory
+        self._cuda_manager = self.factory.get_cuda_manager()
+        self._batch_manager = self.factory.get_batch_manager()
+        self._amp_manager = self.factory.get_amp_manager()
+        self._tokenizer_manager = self.factory.get_tokenizer_manager()
+        self._metrics_manager = self.factory.get_metrics_manager()
+        self._storage_manager = self.factory.get_storage_manager()
 
         self.grad_norm = config['training']['max_grad_norm']
         self.gradient_accumulation = config['training']['gradient_accumulation_steps']
@@ -510,7 +497,7 @@ class BaseTrainer:
         if 'cuda' in self.profiler_config['activities']:
             activities.append(ProfilerActivity.CUDA)
 
-        profiler_dir = self.storage_manager.get_profiler_dir(
+        profiler_dir = self._storage_manager.get_profiler_dir(
             self.trial.number if self.is_trial else None # type: ignore
         )
 
@@ -547,9 +534,9 @@ class BaseTrainer:
                     torch.cuda.empty_cache()
 
             if self.is_trial:
-                self.storage_manager.cleanup_profiler(self.trial.number) # type: ignore
+                self._storage_manager.cleanup_profiler(self.trial.number) # type: ignore
             else:
-                self.storage_manager.cleanup_profiler()
+                self._storage_manager.cleanup_profiler()
 
         except Exception as e:
             logger.error(f"Error cleaning up profiler: {str(e)}")

@@ -17,23 +17,21 @@ logger = logging.getLogger(__name__)
 class StorageManager(BaseManager):
     """Manages Optuna storage and study persistence."""
 
-    def __init__(self, storage_dir: Path, config: Optional[Dict[str, Any]] = None):
-        """Initialize with storage directory."""
-        self.storage_dir = storage_dir  # Set *before* calling super().__init__
+    def __init__(self, factory: 'ManagerFactory'):
+        """Initialize with factory."""
+        super().__init__(factory)
+        output_config = self.get_config_section('output')
+        self.storage_dir = Path(output_config['dir']) / output_config['storage_dir']
         self.storage_path = self.storage_dir / 'optuna.db'
         self.lock_path = self.storage_dir / 'optuna.lock'
         self.history_path = self.storage_dir / 'trial_history.json'
         self.trials_dir = self.storage_dir / "trials"
         self.profiler_dir = self.storage_dir / 'profiler'
-        super().__init__(config) # Now it's safe to call super.
 
 
 
-    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """Initialize process-local attributes."""
-        super()._initialize_process_local(config)
-
-        # Create directories
+    def _setup_process_local(self) -> None:
+        """Setup process-local storage."""
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.trials_dir.mkdir(exist_ok=True)
         self.profiler_dir.mkdir(exist_ok=True)

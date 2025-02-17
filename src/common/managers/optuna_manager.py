@@ -20,56 +20,28 @@ logger = logging.getLogger(__name__)
 class OptunaManager(BaseManager):
     """Manages optimization process using Optuna."""
 
-    def __init__(self, study_name: str, config: Dict[str, Any], storage_dir: Optional[Path] = None):
+    def __init__(self, factory: 'ManagerFactory', study_name: str):
         """
         Initialize the OptunaManager.
 
         Args:
+            factory: The ManagerFactory instance.
             study_name: Name of the Optuna study.
-            config: Configuration dictionary.
-            storage_dir: Directory for Optuna storage.
         """
-        # Assign attributes *before* calling super().__init__()
+        super().__init__(factory)
         self.study_name = study_name
-        self.config = config
-        self.storage_dir = storage_dir
         self.study = None  # Initialize to None
-        super().__init__(config)  # Initialize base, now it's safe
+        self.storage_manager = factory.get_storage_manager()
 
-    def _validate_output_config(self, config: Dict[str, Any]) -> None:
-        """Validate output configuration."""
-        if 'output' not in config:
-            raise ValueError("Missing 'output' section in configuration")
-            
-        output_config = config['output']
-        required_fields = ['dir', 'storage_dir']
-        missing_fields = [field for field in required_fields if field not in output_config]
-        
-        if missing_fields:
-            raise ValueError(f"Missing required output configuration fields: {', '.join(missing_fields)}")
-            
-        # Ensure output directories exist
-        output_dir = Path(output_config['dir'])
-        storage_dir = output_dir / output_config['storage_dir']
-        
-        output_dir.mkdir(parents=True, exist_ok=True)
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        
-        logger.info(f"Output directory: {output_dir}")
-        logger.info(f"Storage directory: {storage_dir}")
-
-    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        super()._initialize_process_local(config)
-        if not self.study_name or not self.config:  # Now safe to access
-            raise ValueError("OptunaManager requires study_name and config to be set.")
-
-        # Validate output configuration first
-        self._validate_output_config(self.config)
+    def _setup_process_local(self) -> None:
+        """Setup process-local storage and initialize study."""
+        if not self.study_name:
+            raise ValueError("OptunaManager requires study_name to be set")
 
         # Initialize study configuration and storage
         self.study_config = StudyConfig(self.config)
         self.study_config.validate_config()
-        self.storage = StudyStorage(self.storage_dir or Path(self.config['output']['dir']) / 'storage')
+        self.storage = StudyStorage(self.storage_manager.storage_dir)
         self.storage_url = self.storage.get_storage_url()
 
         logger.info("\n=== Creating/Loading Study ===")

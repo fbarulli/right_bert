@@ -1,71 +1,102 @@
-# src/common/__init__.py (COMPLETE and CORRECT)
+# src/common/managers/__init__.py
 from __future__ import annotations
-"""Manager access layer to prevent circular imports."""
+"""Manager access layer using factory pattern."""
+import logging
+from typing import Dict, Any, Optional
 from pathlib import Path
 
+from .manager_factory import ManagerFactory
+
+logger = logging.getLogger(__name__)
+
+_factory: Optional[ManagerFactory] = None
+
+def initialize_factory(config: Dict[str, Any]) -> None:
+    """Initialize the manager factory with configuration."""
+    global _factory
+    if _factory is not None:
+        logger.warning("Manager factory already initialized")
+        return
+    _factory = ManagerFactory(config)
+    logger.info("Initialized manager factory")
+
+def get_factory() -> ManagerFactory:
+    """Get the manager factory instance."""
+    if _factory is None:
+        raise RuntimeError("Manager factory not initialized. Call initialize_factory first.")
+    return _factory
+
 def get_amp_manager():
-    from src.common.managers.amp_manager import AMPManager
-    return AMPManager()  # No args needed
+    """Get the AMP manager instance."""
+    return get_factory().get_amp_manager()
 
 def get_batch_manager():
-    from src.common.managers.batch_manager import BatchManager
-    return BatchManager(get_cuda_manager(), get_tensor_manager())
+    """Get the batch manager instance."""
+    return get_factory().get_batch_manager()
 
 def get_cuda_manager():
-    from src.common.managers.cuda_manager import CUDAManager
-    return CUDAManager()
+    """Get the CUDA manager instance."""
+    return get_factory().get_cuda_manager()
 
 def get_data_manager():
-    from src.common.managers.data_manager import DataManager
-    return DataManager()  # No args needed
+    """Get the data manager instance."""
+    return get_factory().get_data_manager()
 
 def get_dataloader_manager():
-    from src.common.managers.dataloader_manager import DataLoaderManager
-    return DataLoaderManager() # No args needed
+    """Get the dataloader manager instance."""
+    return get_factory().get_dataloader_manager()
 
 def get_directory_manager():
-    from src.common.managers.directory_manager import DirectoryManager
-    return DirectoryManager(Path("."))  # Provide base_dir
+    """Get the directory manager instance."""
+    return get_factory().get_directory_manager()
 
 def get_metrics_manager():
-    from src.common.managers.metrics_manager import MetricsManager
-    return MetricsManager()
+    """Get the metrics manager instance."""
+    return get_factory().get_metrics_manager()
 
 def get_model_manager():
-    from src.common.managers.model_manager import ModelManager
-    return ModelManager() # No Args
+    """Get the model manager instance."""
+    return get_factory().get_model_manager()
 
 def get_parameter_manager():
-    from src.common.managers.parameter_manager import ParameterManager
-    return ParameterManager({}) # TODO: Provide base config
+    """Get the parameter manager instance."""
+    return get_factory().get_parameter_manager()
 
 def get_resource_manager():
-    from src.common.managers.resource_manager import ProcessResourceManager
-    return ProcessResourceManager({}) # TODO: Provide config
+    """Get the resource manager instance."""
+    return get_factory().get_resource_manager()
 
 def get_storage_manager():
-    from src.common.managers.storage_manager import StorageManager
-    return StorageManager(Path("storage"))  # Provide storage_dir
+    """Get the storage manager instance."""
+    return get_factory().get_storage_manager()
 
 def get_tensor_manager():
-    from src.common.managers.tensor_manager import TensorManager
-    return TensorManager(get_cuda_manager())
+    """Get the tensor manager instance."""
+    return get_factory().get_tensor_manager()
 
 def get_tokenizer_manager():
-    from src.common.managers.tokenizer_manager import TokenizerManager
-    return TokenizerManager()
+    """Get the tokenizer manager instance."""
+    return get_factory().get_tokenizer_manager()
 
 def get_worker_manager():
-    from src.common.managers.worker_manager import WorkerManager
-    return WorkerManager() # Requires Args, fix later
+    """Get the worker manager instance."""
+    return get_factory().get_worker_manager()
 
 def get_wandb_manager():
-    from src.common.managers.wandb_manager import WandbManager
-    return WandbManager({}, "")  # TODO: Provide config and study_name
+    """Get the W&B manager instance."""
+    return get_factory().get_wandb_manager()
 
 def get_optuna_manager():
-    from src.common.managers.optuna_manager import OptunaManager
-    return OptunaManager() # Requires Args
+    """Get the Optuna manager instance."""
+    return get_factory().get_optuna_manager()
+
+def cleanup_managers():
+    """Clean up all manager instances."""
+    global _factory
+    if _factory is not None:
+        _factory.cleanup()
+        _factory = None
+        logger.info("Cleaned up all managers")
 
 __all__ = [
     'get_amp_manager',

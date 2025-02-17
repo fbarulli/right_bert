@@ -6,10 +6,8 @@ from typing import Dict, Any, Optional
 from torch.utils.data import DataLoader, Dataset
 from transformers import get_linear_schedule_with_warmup
 
-from src.common.managers import get_metrics_manager
+from src.common.managers import get_factory, get_metrics_manager
 from src.training.base_trainer import BaseTrainer
-
-metrics_manager = get_metrics_manager()
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +82,8 @@ class EmbeddingTrainer(BaseTrainer):
         batch: Dict[str, torch.Tensor]
     ) -> Dict[str, float]:
         """Compute metrics and track best values."""
-        metrics = super().compute_metrics(outputs, batch)
+        metrics_manager = get_metrics_manager()
+        metrics = metrics_manager.compute_embedding_metrics(outputs, batch)
 
         if metrics['embedding_loss'] < self.best_embedding_loss:
             self.best_embedding_loss = metrics['embedding_loss']

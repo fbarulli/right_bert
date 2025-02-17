@@ -35,48 +35,56 @@ from src.embedding.embedding_training import train_embeddings
 
 logger = logging.getLogger(__name__)
 
-def train_model(config: Dict[str, Any], wandb_manager = None) -> None:
+def train_model(wandb_manager = None) -> None:
+    """Train the model using managers from the factory."""
     try:
+        from src.common.managers import (
+            get_factory,
+            get_cuda_manager,
+            get_data_manager,
+            get_model_manager,
+            get_tokenizer_manager,
+            get_directory_manager
+        )
+        
+        factory = get_factory()
+        config = factory.config
+        
         seed_everything(config['training']['seed'])
         output_dir = Path(config['output']['dir'])
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Get required managers from factory
         cuda_manager = get_cuda_manager()
-        cuda_manager.setup(config)
-
         data_manager = get_data_manager()
         model_manager = get_model_manager()
         tokenizer_manager = get_tokenizer_manager()
         directory_manager = get_directory_manager()
-        parameter_manager = get_parameter_manager()
-        amp_manager = get_amp_manager()
-        tensor_manager = get_tensor_manager()
-        batch_manager = get_batch_manager()
-        metrics_manager = get_metrics_manager()
-        dataloader_manager = get_dataloader_manager()
-        storage_manager = get_storage_manager()
-        resource_manager = get_resource_manager()
-        optuna_manager = get_optuna_manager()
-        worker_manager = get_worker_manager()
 
+
+        # Setup CUDA
+        cuda_manager.setup(config)
 
         if config['model']['stage'] == 'embedding':
             logger.info("\n=== Starting Embedding Training ===")
 
+            # Initialize tokenizer
             tokenizer = tokenizer_manager.get_worker_tokenizer(0, config['model']['name'])
             set_shared_tokenizer(tokenizer)
-            train_loader, val_loader, train_dataset, val_dataset = data_manager.create_dataloaders(
-                config
-            )
 
+            # Create data loaders
+            train_loader, val_loader, train_dataset, val_dataset = data_manager.create_dataloaders(config)
+
+            # Create model
             model = embedding_model_factory(config)
 
+            # Train model
             train_embeddings(
                 model=model,
                 train_loader=train_loader,
                 val_loader=val_loader,
                 config=config,
-                metrics_dir= str(directory_manager.base_dir / "metrics"),
+                metrics_dir=str(directory_manager.base_dir / "metrics"),
                 is_trial=False,
                 trial=None,
                 wandb_manager=wandb_manager,
@@ -98,14 +106,25 @@ def train_model(config: Dict[str, Any], wandb_manager = None) -> None:
         raise
 
 def objective(trial):
+    """Objective function for Optuna optimization."""
+    from src.common.managers import get_parameter_manager, get_wandb_manager, get_factory
+    
+    # Get managers from factory
     parameter_manager = get_parameter_manager()
-    config = parameter_manager.get_trial_config(trial)
     wandb_manager = get_wandb_manager()
-    if config["training"]["num_trials"] > 1:
+    factory = get_factory()
+    
+    # Get trial configuration
+    config = parameter_manager.get_trial_config(trial)
+    
+    # Initialize wandb for this trial
+    if factory.config["training"]["num_trials"] > 1:
         wandb_manager.init_trial(trial.number)
 
-    train_model(config, wandb_manager=wandb_manager)
+    # Train model with this trial's configuration
+    train_model(wandb_manager=wandb_manager)
 
+    # Return trial result
     best_val_loss = trial.user_attrs.get('best_val_loss', float('inf'))
     return best_val_loss
 
@@ -144,47 +163,53 @@ def validate_config(config: Dict[str, Any]) -> bool:
         return False
 
 def main():
-    global _config
-
     try:
         logger.info(f"Main Process ID: {os.getpid()}")
         
-        # Load configuration first
+        # Load and validate configuration
         logger.info("Loading configuration...")
         config = load_yaml_config("config/embedding_config.yaml")
         if not config:
             logger.error("Failed to load configuration. Exiting.")
             return
 
-        # Validate configuration before proceeding
         if not validate_config(config):
             logger.error("Configuration validation failed. Exiting.")
             return
-
-        # Set global config after validation
-        _config = config
+        
+        # Initialize manager factory
+        from src.common.managers import initialize_factory
+        initialize_factory(config)
         
         # Setup logging after config is loaded and validated
         setup_logging(config=config)
         
-        logger.info("Configuration loaded and validated successfully")
+        logger.info("Configuration loaded and factory initialized")
         logger.info("\n=== Starting Training ===")
         
         if config['training']['num_trials'] > 1:
+            from src.common.managers import get_optuna_manager
             optuna_manager = get_optuna_manager()
             study = optuna_manager.study
             logger.info("Launching Optuna Study")
-            study.optimize(objective, n_trials=config["training"]["num_trials"], n_jobs=config["training"]["n_jobs"])
+            study.optimize(
+                objective, 
+                n_trials=config["training"]["num_trials"], 
+                n_jobs=config["training"]["n_jobs"]
+            )
         else:
-            train_model(config)
+            train_model()  # No need to pass config, it's in the factory
 
     except Exception as e:
         logger.error(f"Training failed: {str(e)}")
         logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise
     finally:
+        # Clean up managers and resources
+        from src.common.managers import cleanup_managers
         from src.common.resource.resource_initializer import ResourceInitializer
         logger.info("Cleaning up resources...")
+        cleanup_managers()
         ResourceInitializer.cleanup_process()
 
 if __name__ == "__main__":
