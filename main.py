@@ -17,7 +17,16 @@ from src.common import (
     get_wandb_manager,
     get_optuna_manager,
     get_shared_tokenizer,
-    set_shared_tokenizer
+    set_shared_tokenizer,
+    get_amp_manager, # ADDED IMPORT
+    get_cuda_manager, # ADDED IMPORT
+    get_tensor_manager, # ADDED IMPORT
+    get_batch_manager, # ADDED IMPORT
+    get_metrics_manager, # ADDED IMPORT
+    get_dataloader_manager, # ADDED IMPORT
+    get_storage_manager, # ADDED IMPORT
+    get_resource_manager, # ADDED IMPORT
+    get_worker_manager # ADDED IMPORT
 )
 from src.embedding.model import embedding_model_factory
 from src.embedding.embedding_training import train_embeddings
@@ -31,13 +40,15 @@ def train_model(config: Dict[str, Any], wandb_manager = None) -> None: #Added wa
         output_dir = Path(config['output']['dir'])
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        cuda_manager = get_cuda_manager() # Initialize cuda_manager FIRST
+        cuda_manager.setup(config) #Setup CUDA
+
         data_manager = get_data_manager()
         model_manager = get_model_manager()
         tokenizer_manager = get_tokenizer_manager()
         directory_manager = get_directory_manager()
         parameter_manager = get_parameter_manager()
-        amp_manager = get_amp_manager() # Initialize amp_manager
-        cuda_manager = get_cuda_manager() #Initialize cuda_manager
+        amp_manager = get_amp_manager() # Initialize amp_manager - AFTER CUDA
         tensor_manager = get_tensor_manager() # initialize tensor_manager
         batch_manager = get_batch_manager() #Initialize batch_manager
         metrics_manager = get_metrics_manager() # initialize metrics_manager
@@ -46,7 +57,7 @@ def train_model(config: Dict[str, Any], wandb_manager = None) -> None: #Added wa
         resource_manager = get_resource_manager() #initialize resource_manager
         optuna_manager = get_optuna_manager() # intialize optuna_manager
         worker_manager = get_worker_manager() # initialize worker_manager
-        wandb_manager = get_wandb_manager() # Initialize wandb_manager
+        #wandb_manager = get_wandb_manager() # Initialize wandb_manager - initialized in main
 
 
         if config['model']['stage'] == 'embedding':
