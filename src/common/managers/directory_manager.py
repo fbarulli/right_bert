@@ -23,10 +23,11 @@ class DirectoryManager(BaseManager):
             base_dir: Base directory for outputs and caching.
             config: Configuration dictionary (optional).  Not used by DirectoryManager.
         """
+        self.base_dir = base_dir   # Store base_dir FIRST
         super().__init__(config)  # Initialize with config
         if base_dir is None:
             raise ValueError("base_dir cannot be None")
-        self.base_dir = Path(base_dir)   # Store base_dir
+
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""
@@ -35,14 +36,16 @@ class DirectoryManager(BaseManager):
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = self.base_dir / 'cache'
         self.mmap_dir = self.base_dir / 'mmap'
+        self.storage_dir = self.base_dir / 'storage' # Ensure storage_dir is initialized
         self.cache_dir.mkdir(exist_ok=True)
         self.mmap_dir.mkdir(exist_ok=True)
+        self.storage_dir.mkdir(exist_ok=True) # Ensure storage_dir exists
 
         logger.debug(f"Created directory structure at {self.base_dir}")
 
     def get_db_path(self) -> Path:
         """Get path to optuna database."""
-        return self.base_dir / 'optuna.db'
+        return self.storage_dir / 'optuna.db' # Use self.storage_dir
 
     def get_history_path(self) -> Path:
         """Get path to trial history file."""

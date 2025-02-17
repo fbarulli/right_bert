@@ -13,12 +13,12 @@ PARAMETER_TYPES = {
         'max_length': int,
         'embedding_mask_probability': float,
         'max_predictions': int,
-        'num_workers': int
+        'num_workers': int, # Corrected: num_workers back in data section - needed for dataset
+        'max_span_length': int, 
     },
     'training': {
         'batch_size': int,
         'num_epochs': int,
-        'num_workers': int,
         'seed': int,
         'n_jobs': int,
         'num_trials': int,
@@ -30,12 +30,17 @@ PARAMETER_TYPES = {
         "save_every_n_epochs": int,
         'early_stopping_patience': int,
         'early_stopping_min_delta': float,
-        "max_grad_norm": float
+        "max_grad_norm": float,
+        'hidden_dropout_prob': float, #Corrected: Moved back to training section - but also needed in model
+        'attention_probs_dropout_prob': float #Corrected: Moved back to training section - but also needed in model
+        #'num_workers': int #Corrected: Removed num_workers from training section - only in data
     },
     'model': {
         'name': str,
-        'type': str, #Added type
-        "stage":str # Added stage
+        'type': str,
+        "stage":str,
+        #'hidden_dropout_prob': float, #Model dropout # Corrected: moved to model section
+        #'attention_probs_dropout_prob': float # Attention dropout # Corrected: moved to model section
     },
     'optimizer': {
         'learning_rate': float,
@@ -47,24 +52,23 @@ PARAMETER_TYPES = {
     },
     'output': {
         'dir': str,
-        "storage_dir": str, #Added storage
+        "storage_dir": str,
         "wandb": dict
     },
     'study_name': str,
     'hyperparameters': dict,
     'resources': {
         'max_memory_gb': float,
-        'gpu_memory_gb': float, #Added GPU
+        'gpu_memory_gb': float,
         'garbage_collection_threshold': float,
-        'max_split_size_mb': float, #Not used for now
+        'max_split_size_mb': float,
         'max_time_hours': float,
-        'cache_cleanup_days': float #Not used for now
+        'cache_cleanup_days': float
     },
     'scheduler': dict
 }
 
 def _convert_value(value: Any, target_type: type) -> Any:
-    """Convert value to target type."""
     try:
         if target_type == bool:
             if isinstance(value, str):
@@ -76,14 +80,13 @@ def _convert_value(value: Any, target_type: type) -> Any:
         raise
 
 def _convert_config_types(config: Dict[str, Any], type_map: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursively convert config values to correct types."""
-    converted: Dict[str, Any] = {}  # Initialize to correct type
+    converted: Dict[str, Any] = {}
     for key, value in config.items():
         if isinstance(value, dict):
             if key in type_map and isinstance(type_map[key], dict):
                 converted[key] = _convert_config_types(value, type_map[key])
             else:
-                converted[key] = value  # Keep as is if no type spec
+                converted[key] = value
         elif key in type_map:
             try:
                 converted[key] = _convert_value(value, type_map[key])
@@ -92,24 +95,21 @@ def _convert_config_types(config: Dict[str, Any], type_map: Dict[str, Any]) -> D
                 logger.error(f"Error converting {key}={value}: {str(e)}")
                 raise
         else:
-            converted[key] = value  # Keep as is if not in type map
+            converted[key] = value
     return converted
 
 def load_yaml_config(filepath: str) -> Dict[str, Any]:
-    """Loads a YAML configuration file and converts types."""
     try:
         with open(filepath, 'r') as f:
             config = yaml.safe_load(f)
-            # Add basic validation, check if config is None or empty
             if config is None:
                 logging.warning(f"YAML file at {filepath} is empty.")
                 return {}
-            # Convert the config types
             config =  _convert_config_types(config, PARAMETER_TYPES)
             return config
     except FileNotFoundError:
         logging.error(f"YAML file not found: {filepath}")
-        return {}  # Return an empty dict to signal failure
+        return {}
     except yaml.YAMLError as e:
         logging.error(f"Error parsing YAML file {filepath}: {e}")
         return {}

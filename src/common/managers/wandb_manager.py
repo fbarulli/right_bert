@@ -27,20 +27,21 @@ class WandbManager(BaseManager):
     def __init__(self,
         config: Dict[str, Any],
         study_name: str):
-        super().__init__()
-        self.config = config
+        self.config = config # Initialize config here
         self.study_name = study_name
-        
+        super().__init__(config)
+
+
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""
         super()._initialize_process_local(config)
         self.start_time = None
         self.run = None
-        self.enabled = WANDB_AVAILABLE and self.config.get('output', {}).get('wandb', {}).get('enabled', False)
+        self.enabled = WANDB_AVAILABLE and self.config['output']['wandb']['enabled']
 
         if self.enabled:
             wandb_config = self.config['output']['wandb']
-            api_key = wandb_config.get('api_key')
+            api_key = wandb_config['api_key']
             if not api_key:
                 logger.warning("No wandb API key provided, disabling wandb logging")
                 self.enabled = False
@@ -96,7 +97,7 @@ class WandbManager(BaseManager):
 
         try:
             logger.debug("Starting wandb.init")
-            wandb_config = self.config['output']
+            wandb_config = self.config['output']['wandb']
             group_name = f"optimization_{self.study_name}"
             
             self.run = wandb.init(
@@ -126,7 +127,7 @@ class WandbManager(BaseManager):
             self.cleanup_run()
             
             group_name = f"optimization_{self.study_name}"
-            wandb_config = self.config['output']
+            wandb_config = self.config['output']['wandb']
             
             self.run = wandb.init(
                 project=wandb_config.get('project', self.study_name),
@@ -264,4 +265,3 @@ class WandbManager(BaseManager):
                 self.run.log(metrics)
         except Exception as e:
             logger.warning(f"Failed to log progress to wandb: {e}")
-__all__ = ['WandbManager']

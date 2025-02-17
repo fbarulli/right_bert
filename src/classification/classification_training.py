@@ -26,17 +26,17 @@ from src.common.managers import (
 )
 
 from src.common.utils import seed_everything, create_optimizer, create_scheduler
+from src.classification.classification_trainer import ClassificationTrainer
+from src.common.utils import load_yaml_config
+
 
 logger = logging.getLogger(__name__)
 
 def get_classification_model():
-    """Get ClassificationBert model at runtime to avoid circular imports."""
     from src.classification.model import ClassificationBert
     return ClassificationBert
 
 def run_classification_optimization(embedding_model_path: str, config_path: str, study_name: Optional[str] = None) -> Dict[str, Any]:
-    """Run classification optimization stage."""
-    from src.common.utils import load_yaml_config
     config = load_yaml_config(config_path)
     n_jobs = config['training']['n_jobs']
     n_trials = config['training']['num_trials']
@@ -44,15 +44,12 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
 
     output_dir = Path(config['output']['dir']).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    # device = configure_device()
 
     logger.info("Loading labels for classification training")
-    # train_labels, val_labels = get_texts_and_labels(config)  # Assuming you have this function
 
     study_manager = get_optuna_manager()
 
     def objective(trial):
-        # Initialize all variables to None at start
         local_vars: Dict[str, Any] = {
             'model': None,
             'tokenizer': None,
@@ -83,7 +80,6 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
                 config=trial_config,
                 num_labels=trial_config['model']['num_labels']
             )
-            # .to(device)  # Move to device within the trainer
 
             train_dataset, val_dataset = data_manager.create_datasets(
                 trial_config,
@@ -163,7 +159,7 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
             if torch.cuda.is_available():
                 for var_name, var in local_vars.items():
                     if var is not None:
-                        del var  # Explicitly delete
+                        del var
                 torch.cuda.empty_cache()
                 logger.info("Cleaned up trial resources")
 
@@ -173,14 +169,12 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
     return best_trial.params
 
 def train_final_model(embedding_model_path: str, best_params: Dict[str, Any], config_path: str, output_dir: Optional[Path] = None) -> None:
-    """Train final classification model with best parameters."""
     config = load_yaml_config(config_path)
     if output_dir:
         output_dir = Path(output_dir)
     else:
         output_dir = Path(config['output']['dir'])
     output_dir.mkdir(parents=True, exist_ok=True)
-    # device = configure_device()  # No longer needed here
     set_seed(config['training']['seed'])
     parameter_manager = get_parameter_manager()
     data_manager = get_data_manager()

@@ -25,9 +25,8 @@ training:
   learning_rate: 1.0e-4  # BERT's original learning rate
   weight_decay: 0.01  # Weight decay
   warmup_ratio: 0.1  # BERT's warmup ratio
-  hidden_dropout_prob: 0.1  # Hidden dropout
-  attention_probs_dropout_prob: 0.1  # Attention dropout
-
+  hidden_dropout_prob: 0.1
+  attention_probs_dropout_prob: 0.1
   # Scheduler settings
   scheduler:
     type: "linear"  # Linear decay like BERT
@@ -42,12 +41,15 @@ data:
   embedding_mask_probability: 0.15  # Standard BERT masking probability
   max_predictions: 20
   max_span_length: 3  # Allow 1-3 word spans for better context
+  num_workers: 2 # Corrected: moved num_workers to data section in config # Moved back to training - but also needed in data for dataset
 
 model:
   name: "bert-base-uncased"
   type: "pretrained"
   stage: "embedding"
-  tie_weights: True # Added from model.py
+  tie_weights: True
+  hidden_dropout_prob: 0.1
+  attention_probs_dropout_prob: 0.1
 
 hyperparameters:
   learning_rate:
@@ -94,7 +96,7 @@ output:
   save_model: True
   save_optimizer: False
   save_scheduler: False
-  wandb:   # Wandb config
+  wandb:
       enabled: False
       project: "my_project"
       api_key: ""

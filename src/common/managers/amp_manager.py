@@ -5,16 +5,15 @@ import logging
 import traceback
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
-from .base_manager import BaseManager  # CORRECTED: Relative import
-
-
+from .base_manager import BaseManager
 
 logger = logging.getLogger(__name__)
 
 class AMPManager(BaseManager):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, config: Optional[Dict[str, Any]] = None): #Take config
+        super().__init__(config) # Pass config to super
+
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         try:
@@ -28,7 +27,7 @@ class AMPManager(BaseManager):
 
             if cuda_manager.is_available():
                 training_config = self.get_config_section(config, 'training')
-                if training_config['fp16']:
+                if training_config['fp16']: #No more KeyError
                     self._local.scaler = torch.cuda.amp.GradScaler()
                     logger.info(f"Initialized GradScaler for process {self._local.pid}")
                 else:

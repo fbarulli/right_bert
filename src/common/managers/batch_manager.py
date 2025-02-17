@@ -6,21 +6,20 @@ from typing import Dict, Any, Optional, Union
 from torch.utils.data import DataLoader
 
 from src.common.managers.base_manager import BaseManager
-from src.common.managers import get_cuda_manager, get_tensor_manager # Corrected import
+from src.common.managers import get_cuda_manager, get_tensor_manager
 
 logger = logging.getLogger(__name__)
 
 class BatchManager(BaseManager):
     """Process-local batch manager for device placement and memory management."""
 
-    def __init__(self):
+    def __init__(self): #Removed args
         super().__init__()
-        self.cuda_manager = None  # Initialize to None
-        self.tensor_manager = None # Initialize to None
+        self.cuda_manager = None
+        self.tensor_manager = None
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         super()._initialize_process_local(config)
-        # Get the instances *inside* _initialize_process_local
         self.cuda_manager = get_cuda_manager()
         self.tensor_manager = get_tensor_manager()
         self.cuda_manager.ensure_initialized()
@@ -33,11 +32,9 @@ class BatchManager(BaseManager):
         batch: Dict[str, torch.Tensor],
         device: Optional[torch.device] = None
     ) -> Dict[str, torch.Tensor]:
-        """Move batch tensors to target device."""
         self.ensure_initialized()
         try:
             if device is None:
-                # Get the managers using the getter functions
                 device = get_cuda_manager().get_device()
 
             model_fields = {'input_ids', 'attention_mask', 'token_type_ids', 'position_ids', 'labels'}
@@ -57,13 +54,12 @@ class BatchManager(BaseManager):
         self.ensure_initialized()
         try:
             if isinstance(batch, dict):
-                # Get first tensor's batch size
                 for v in batch.values():
                     if isinstance(v, torch.Tensor):
                         return v.size(0)
                 raise ValueError("No tensors found in batch dict")
             elif isinstance(batch, DataLoader):
-                return batch.batch_size  # DataLoader has a batch_size attribute
+                return batch.batch_size
             else:
                 raise TypeError(f"Unsupported batch type: {type(batch)}")
 
