@@ -1,4 +1,4 @@
-# src/common/managers/optuna_manager.py (CORRECTED)
+# src/common/managers/optuna_manager.py (FINAL CORRECTED)
 import logging
 import os
 import threading
@@ -33,8 +33,8 @@ class OptunaManager(BaseManager):
         self.study_name = study_name
         self.config = config
         self.storage_dir = storage_dir
-        self.study = None # Initialize to None
-        super().__init__(config) # Initialize base, calling _initialize
+        self.study = None  # Initialize to None
+        super().__init__(config)  # Initialize base, now it's safe
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         super()._initialize_process_local(config)

@@ -91,10 +91,8 @@ def objective(trial):
 
 def main():
     """Main entry point."""
-    try:
-        import src.common.tensorflow_init  # Corrected: Just import
-    except Exception as e:
-        print("tf init failed", e)
+    global _config #For accessing the global config
+
     try:
         logger.info(f"Main Process ID: {os.getpid()}")
         setup_logging(config = load_yaml_config("config/embedding_config.yaml"))
@@ -104,6 +102,7 @@ def main():
         if not config:
             logger.error("Failed to load configuration. Exiting.")
             return
+        _config = config # Set the global config here
 
         logger.info("Configuration loaded successfully")
         logger.info("\n=== Starting Training ===")
@@ -120,7 +119,7 @@ def main():
         logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise
     finally:
-        from src.common.resource.resource_initializer import ResourceInitializer # Corrected import
+        from src.common.resource.resource_initializer import ResourceInitializer
         logger.info("Cleaning up resources...")
         ResourceInitializer.cleanup_process()
 
