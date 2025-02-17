@@ -1,4 +1,5 @@
 # src/common/study/trial_state_manager.py
+# src/common/study/trial_state_manager.py
 from __future__ import annotations
 import logging
 from enum import Enum

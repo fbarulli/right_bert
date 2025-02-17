@@ -1,4 +1,5 @@
 # src/common/study/study_config.py
+# src/common/study/study_config.py
 from __future__ import annotations
 import logging
 from typing import Dict, Any
@@ -28,10 +29,10 @@ class StudyConfig:
         return TPESampler(
             n_startup_trials=self.config['training']['n_startup_trials'],
             seed=self.config['training']['seed'],
-            consider_prior=False,  # Disable prior-based sampling
-            consider_magic_clip=False,  # Disable magic clip
-            consider_endpoints=False,  # Disable endpoint consideration
-            multivariate=False  # Use univariate TPE
+            consider_prior=False,
+            consider_magic_clip=False,
+            consider_endpoints=False,
+            multivariate=False
         )
 
     def validate_config(self) -> None:
@@ -40,7 +41,7 @@ class StudyConfig:
 
     def suggest_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
         """Suggest parameters using parameter manager."""
-        return self.param_manager.get_trial_config(trial)  # Use get_trial_config
+        return self.param_manager.get_trial_config(trial)
 
     def create_minimal_config(self) -> Dict[str, Any]:
         """Create minimal config for worker processes."""

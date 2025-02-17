@@ -1,3 +1,4 @@
+# src/embedding/model.py
 # src/embedding/model.py (CONFIRM ABSOLUTE IMPORTS)
 from __future__ import annotations
 import logging
@@ -7,16 +8,12 @@ from transformers import BertPreTrainedModel, BertModel, BertConfig
 from typing import Dict, Any, Optional, Tuple, Union
 import optuna
 
-#DELAYED IMPORTS
-# from src.common.managers import (
-#     get_cuda_manager,
-#     get_batch_manager,
-#     get_tensor_manager
-# )
+from src.common.managers import (
+    get_cuda_manager,
+    get_batch_manager,
+    get_tensor_manager
+)
 
-# cuda_manager = get_cuda_manager()
-# batch_manager = get_batch_manager()
-# tensor_manager = get_tensor_manager()
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +27,6 @@ class EmbeddingBert(BertPreTrainedModel):
     ):
         """
         Initialize model.
-
-        Args:
-            config: Model configuration
-            tie_weights: Whether to tie input/output embeddings
         """
         super().__init__(config)
 
@@ -76,21 +69,7 @@ class EmbeddingBert(BertPreTrainedModel):
     ) -> Union[Tuple, Dict[str, torch.Tensor]]:
         """
         Forward pass.
-
-        Args:
-            input_ids: Input token IDs
-            attention_mask: Attention mask
-            token_type_ids: Optional token type IDs
-            position_ids: Optional position IDs
-            labels: Optional labels for loss calculation
-            output_hidden_states: Whether to output all hidden states
-            output_attentions: Whether to output attention weights
-            return_dict: Whether to return dict or tuple
-
-        Returns:
-            Model outputs
         """
-        from src.common.managers import get_batch_manager
         batch_manager = get_batch_manager()
         inputs = {
             'input_ids': input_ids,
@@ -103,7 +82,7 @@ class EmbeddingBert(BertPreTrainedModel):
         if labels is not None:
             inputs['labels'] = labels
 
-        inputs = batch_manager.prepare_batch(inputs, self.device) # type: ignore
+        inputs = batch_manager.prepare_batch(inputs, self.device)
 
         outputs = self.bert(
             input_ids=inputs['input_ids'],
@@ -147,9 +126,6 @@ class BertEmbeddingHead(nn.Module):
     def __init__(self, config: BertConfig):
         """
         Initialize embedding prediction head.
-
-        Args:
-            config: Model configuration
         """
         super().__init__()
         self.predictions = BertLMPredictionHead(config)
@@ -157,12 +133,6 @@ class BertEmbeddingHead(nn.Module):
     def forward(self, sequence_output: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
-
-        Args:
-            sequence_output: Sequence output from BERT
-
-        Returns:
-            Prediction scores
         """
         prediction_scores = self.predictions(sequence_output)
         return prediction_scores
@@ -173,9 +143,6 @@ class BertLMPredictionHead(nn.Module):
     def __init__(self, config: BertConfig):
         """
         Initialize prediction head.
-
-        Args:
-            config: Model configuration
         """
         super().__init__()
         self.transform = BertPredictionHeadTransform(config)
@@ -187,12 +154,6 @@ class BertLMPredictionHead(nn.Module):
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
-
-        Args:
-            hidden_states: Hidden states from transform layer
-
-        Returns:
-            Prediction scores
         """
         hidden_states = self.transform(hidden_states)
         hidden_states = self.decoder(hidden_states)
@@ -204,9 +165,6 @@ class BertPredictionHeadTransform(nn.Module):
     def __init__(self, config: BertConfig):
         """
         Initialize transform layer.
-
-        Args:
-            config: Model configuration
         """
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
@@ -221,12 +179,6 @@ class BertPredictionHeadTransform(nn.Module):
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
-
-        Args:
-            hidden_states: Hidden states from BERT
-
-        Returns:
-            Transformed hidden states
         """
         hidden_states = self.dense(hidden_states)
         hidden_states = self.transform_act_fn(hidden_states)
@@ -236,15 +188,6 @@ class BertPredictionHeadTransform(nn.Module):
 def embedding_model_factory(config: Dict[str, Any], trial: Optional[optuna.Trial] = None) -> EmbeddingBert:
     """
     Factory function for creating an EmbeddingBert model.
-
-    Args:
-        config (Dict[str, Any]): Model configuration.  Expected keys:
-            'model_name' (str): Name of the pre-trained BERT model.
-            'tie_weights' (bool): Whether to tie input/output embedding weights.
-        trial (Optional[optuna.Trial]): Optuna trial object for hyperparameter optimization.
-
-    Returns:
-        EmbeddingBert: The created EmbeddingBert model.
     """
     model_config = BertConfig.from_pretrained(config['model']['name'])
 

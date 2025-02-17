@@ -1,3 +1,4 @@
+# src/common/managers/storage_manager.py
 # src/common/managers/storage_manager.py (CORRECTED)
 from __future__ import annotations
 import sqlite3
@@ -175,5 +176,3 @@ class StorageManager(BaseManager):
             conn.close()
         except Exception as e:
             logger.error(f"Error checking database status: {e}")
-
-__all__ = ['StorageManager']

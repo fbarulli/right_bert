@@ -1,4 +1,5 @@
 # src/embedding/dataset.py
+# src/embedding/dataset.py
 from __future__ import annotations
 import torch
 import random
@@ -10,7 +11,6 @@ from transformers import PreTrainedTokenizerFast
 
 from src.common.managers import (  # Absolute import
     get_tensor_manager,
-    get_tokenizer_manager
 )
 from src.data.csv_dataset import CSVDataset  # Absolute import
 from src.embedding.masking import SpanMaskingModule  # Absolute import
@@ -55,7 +55,6 @@ class EmbeddingDataset(CSVDataset):
         self.mask_prob = mask_prob
         self.max_predictions = max_predictions
         self.max_span_length = max_span_length
-        # Initialize masking module
         self.masking_module = SpanMaskingModule(
             tokenizer=self.tokenizer,
             mask_prob=self.mask_prob,
@@ -65,57 +64,26 @@ class EmbeddingDataset(CSVDataset):
         )
 
     def _mask_tokens(self, item: Dict[str, torch.Tensor], idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Apply masking using the SpanMaskingModule.
-
-        Args:
-            item: Dictionary containing input tensors
-            idx: Index into the dataset
-
-        Returns:
-            Tuple of (masked inputs, labels) both of shape [seq_len]
-        """
+        """Apply masking using the SpanMaskingModule."""
         if item['input_ids'].dim() != 1:
             raise ValueError(f"Expected 1D input tensor, got shape: {item['input_ids'].shape}")
 
-        # Apply masking using the module (returns CPU tensors)
         masked_inputs, labels = self.masking_module(item)
 
         return masked_inputs, labels
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """Get a single item from the dataset with masking applied.
-
-        Args:
-            idx: Index into the dataset split
-
-        Returns:
-            Dictionary containing masked input_ids, attention_mask, and labels
-        """
-        # Get base item from parent class
+        """Get a single item from the dataset with masking applied."""
         item = super().__getitem__(idx)
 
-        # Apply masking and log details
+        input_ids, embedding_labels = self._mask_tokens(item, idx)
 
         logger.debug(
-            f"Applying masking for index {idx}\n"
+            f"Masking results for index {idx}\n"
             f"- Input length: {len(item['input_ids'])}\n"
             f"- Target mask prob: {self.mask_prob:.2%}\n"
             f"- Max span length: {self.max_span_length}"
         )
-
-        input_ids, embedding_labels = self._mask_tokens(item, idx)
-
-        # Log masking results
-        mask = embedding_labels != -100
-        mask_ratio = mask.sum().item() / len(embedding_labels)
-        '''
-        logger.info(
-            f"Masking results for index {idx}:\n"
-            f"- Mask ratio achieved: {mask_ratio:.2%}\n"
-            f"- Total tokens: {len(embedding_labels)}\n"
-            f"- Masked tokens: {mask.sum().item()}\n"
-            f"- Sequence length: {len(item['input_ids'])}"
-        )'''
 
         item['input_ids'] = input_ids
         item['labels'] = embedding_labels

@@ -1,7 +1,8 @@
 # src/common/process/__init__.py
+# src/common/process/__init__.py
 from src.common.process.process_init import (
     initialize_process,
-    cleanup_process, # corrected
+    cleanup_process,
     get_worker_init_fn,
     initialize_worker
 )
@@ -13,11 +14,17 @@ from src.common.process.process_utils import (
     get_parent_process_id,
     set_process_priority
 )
+from src.common.process.multiprocessing_setup import setup_multiprocessing, verify_spawn_method
+
 
 __all__ = [
     # Process Initialization
     'initialize_process',
-    'cleanup_process', #corrected
+    'cleanup_process',
+    'get_worker_init_fn',
+    'initialize_worker',
+    'setup_multiprocessing',
+    'verify_spawn_method',
 
     # Process Utilities
     'set_process_name',
@@ -25,7 +32,5 @@ __all__ = [
     'is_main_process',
     'get_process_id',
     'get_parent_process_id',
-    'set_process_priority',
-    'get_worker_init_fn', #Added
-    'initialize_worker'#Added
+    'set_process_priority'
 ]

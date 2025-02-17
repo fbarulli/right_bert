@@ -1,3 +1,5 @@
+# src/common/study/trial_analyzer.py
+# src/common/study/trial_analyzer.py
 from __future__ import annotations
 import logging
 import numpy as np

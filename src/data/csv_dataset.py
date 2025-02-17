@@ -1,3 +1,4 @@
+# csv_dataset.py
 # src/data/csv_dataset.py
 from __future__ import annotations
 import csv
@@ -41,45 +42,19 @@ class TokenizedBatch:
 def create_memmap_array(filename: str | Path, shape: tuple, dtype: type) -> np.ndarray:
     """
     Creates a memory-mapped array.
-
-    Args:
-        filename: The path to the file where the array will be stored.
-        shape: The shape of the array.
-        dtype: The data type of the array.
-
-    Returns:
-        The created memory-mapped array.
     """
     return np.memmap(filename, dtype=dtype, mode='w+', shape=shape)
 
 def load_memmap_array(filename: str | Path, shape: tuple, dtype: type) -> np.ndarray:
     """
     Loads a memory-mapped array.
-
-    Args:
-        filename: The path to the file where the array is stored.
-        shape: The shape of the array.
-        dtype: The data type of the array.
-
-    Returns:
-        The loaded memory-mapped array.
     """
     return np.memmap(filename, dtype=dtype, mode='r+', shape=shape)
 
 
 def process_batch_parallel(tokenizer: PreTrainedTokenizerFast, texts: List[str], max_length: int) -> Dict[str, np.ndarray]:
     """
-    Process a batch of texts in parallel, splitting into *words* first,
-    then using the tokenizer with is_split_into_words=True, and handling
-    padding/truncation *after* the parallel processing.
-
-    Args:
-        tokenizer: The Hugging Face tokenizer.
-        texts: A list of text strings to process.
-        max_length: The maximum sequence length.
-
-    Returns:
-        A dictionary containing the tokenized data.
+    Process a batch of texts in parallel.
     """
     logger.debug(f"process_batch_parallel called with {len(texts)=} texts")
 
@@ -119,19 +94,7 @@ def process_batch_parallel(tokenizer: PreTrainedTokenizerFast, texts: List[str],
 
 class CSVDataset(Dataset):
     """
-    A PyTorch Dataset for loading data from a CSV file. Uses memory-mapping
-    for efficient handling of large datasets.
-
-    Args:
-        data_path: Path to the CSV data file.
-        tokenizer: The Hugging Face tokenizer.
-        max_length: The maximum sequence length.
-        split: 'train' or 'val'.  Determines which portion of the data
-            to use (based on train_ratio).
-        train_ratio: The ratio of data to use for training (the rest
-            is used for validation).
-        cache_dir: Optional directory for caching.
-            Defaults to '.cache' in the project root.
+    A PyTorch Dataset for loading data from a CSV file.
     """
 
     def __init__(
@@ -330,17 +293,6 @@ def csv_dataset_factory(
 ) -> CSVDataset:
     """
     Factory function for creating a CSVDataset instance.
-
-    Args:
-        data_path: Path to the CSV data file.
-        tokenizer: The Hugging Face tokenizer.
-        max_length: The maximum sequence length.
-        split: 'train' or 'val'.
-        train_ratio: Ratio of data to use for training.
-        cache_dir: Optional directory for caching.
-
-    Returns:
-        A CSVDataset instance.
     """
     logger.info(f"Creating CSVDataset with factory: data_path={data_path}, max_length={max_length}, split={split}, train_ratio={train_ratio}, cache_dir={cache_dir}")
     try:

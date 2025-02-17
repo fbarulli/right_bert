@@ -1,4 +1,6 @@
+# src/common/managers/tensor_manager.py
 # src/common/managers/tensor_manager.py (FINAL CORRECTED)
+from __future__ import annotations
 import torch
 import logging
 import traceback

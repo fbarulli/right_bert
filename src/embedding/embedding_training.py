@@ -1,3 +1,4 @@
+# src/embedding/embedding_training.py
 #src/embedding/embedding_training.py
 from __future__ import annotations
 
@@ -57,7 +58,6 @@ def train_embeddings(
                 logger.warning(f"Failed to plot trial metrics: {str(e)}")
 
         trainer.cleanup_memory(aggressive=True)
-        # clear_memory()  # No need, cleanup_memory does this
 
     except Exception as e:
         logger.error(f"Error in embedding training: {str(e)}")
@@ -82,5 +82,4 @@ def validate_embeddings(
         words_to_check: Optional list of words to find nearest neighbors for.
         top_k: Number of nearest neighbors to retrieve.
     """
-    # Implementation from previous response (now correctly integrated)
-    pass #Remove this once implemented
+    pass

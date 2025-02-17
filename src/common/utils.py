@@ -1,4 +1,5 @@
 # src/common/utils.py
+# src/common/utils.py
 from __future__ import annotations
 
 import logging
@@ -20,37 +21,23 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
 def setup_logging(config: Dict[str, Any]) -> None:
-    """
-    Sets up logging based on the provided configuration.
-
-    Args:
-        config: A dictionary containing logging configuration, or None to use defaults.
-                 Expected keys within the 'logging' section (or 'training' if 'logging' is absent):
-                     'level': (str) The desired logging level (e.g., "DEBUG", "INFO", "WARNING").
-                     'file': (str, optional) The file to write logs to. If None, logs only to console.
-                     'format': (str, optional) Custom logging format string.
-    """
     import coloredlogs
 
-    log_config = config.get('logging', config.get('training', {}))
-    level_str = log_config.get('level', 'INFO').upper()
-    log_file = log_config.get('file')
-    log_format = log_config.get('format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    log_config = config['logging'] if 'logging' in config else config['training']
+    level_str = log_config['level'].upper()
+    log_file = log_config['file']
+    log_format = log_config['format']
 
-    try:
-        numeric_level = getattr(logging, level_str)
-        if not isinstance(numeric_level, int):
-            raise ValueError(f'Invalid log level: "{level_str}"')
-    except (AttributeError, ValueError):
-        print(f"Invalid log level: {level_str}.  Defaulting to INFO.")
+    numeric_level = getattr(logging, level_str, logging.INFO)
+    if not isinstance(numeric_level, int):
         numeric_level = logging.INFO
 
     logging.basicConfig(
-        level=logging.DEBUG,  # ALWAYS log everything internally
+        level=logging.DEBUG,
         format=log_format,
         handlers=[
-            logging.StreamHandler(),  # Always log to console
-            *([] if log_file is None else [logging.FileHandler(log_file)])  # Add file handler if specified
+            logging.StreamHandler(),
+            *([] if log_file is None else [logging.FileHandler(log_file)])
         ]
     )
 
@@ -61,7 +48,6 @@ def setup_logging(config: Dict[str, Any]) -> None:
     logger.info(f"Logging level set to: {logging.getLevelName(numeric_level)}")
 
 def seed_everything(seed: int) -> None:
-    """Sets the random seed for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -70,13 +56,12 @@ def seed_everything(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 def get_memory_usage() -> Dict[str, float]:
-    """Gets the current memory usage (both CPU and GPU, if available)."""
     process = psutil.Process()
     memory_info = process.memory_info()
 
     usage = {
-        'rss': memory_info.rss / (1024 ** 3), #Residen Set Size
-        'vms': memory_info.vms / (1024 ** 3), #Virtual Memory Size
+        'rss': memory_info.rss / (1024 ** 3),
+        'vms': memory_info.vms / (1024 ** 3),
     }
 
     if torch.cuda.is_available():
@@ -88,7 +73,6 @@ def get_memory_usage() -> Dict[str, float]:
     return usage
 
 def clear_memory() -> None:
-    """Clears GPU memory and runs garbage collection."""
     from src.common.managers import get_tokenizer_manager
     tokenizer_manager = get_tokenizer_manager()
     tokenizer_manager.cleanup_worker(os.getpid())
@@ -107,22 +91,6 @@ def parallel_map(
     chunk_size: Optional[int] = None,
     wandb_manager: Optional[Any] = None
 ) -> List[Any]:
-    """
-    Applies a function to a list of items in parallel, using threads or processes.
-
-    Args:
-        func: The function to apply.
-        items: The list of items to process.
-        max_workers: The maximum number of worker threads/processes. Defaults to the number of CPUs.
-        use_processes: Whether to use processes (True) or threads (False).
-        desc: A description for logging/progress tracking.
-        chunk_size: The chunk size for processing.
-        wandb_manager: Optional WandB manager for logging progress.
-
-    Returns:
-        A list of results, in the same order as the input items.
-    """
-
     if max_workers is None:
         max_workers = os.cpu_count() or 4
 
@@ -149,7 +117,6 @@ def batch_iterator(
     batch_size: int,
     drop_last: bool = False
 ) -> Iterator[List[T]]:
-    """Iterates over a list in batches."""
     length = len(items)
     for ndx in range(0, length, batch_size):
         batch = items[ndx:min(ndx + batch_size, length)]
@@ -163,7 +130,6 @@ def create_memmap_array(
     dtype: np.dtype = np.float32,
     data: Optional[np.ndarray] = None
 ) -> np.ndarray:
-    """Creates a memory-mapped array."""
     if data is not None:
         array = np.memmap(path, dtype=dtype, mode='w+', shape=shape)
         array[:] = data[:]
@@ -179,11 +145,9 @@ def load_memmap_array(
     dtype: np.dtype = np.float32,
     mode: str = 'r'
 ) -> np.ndarray:
-    """Loads a memory-mapped array."""
     return np.memmap(path, dtype=dtype, mode=mode, shape=shape)
 
 def measure_memory(func: Callable) -> Callable:
-    """Decorator to measure memory usage of a function."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         before = get_memory_usage()
@@ -213,7 +177,6 @@ def chunk_file(
     file_path: Path,
     chunk_size: str = '64MB'
 ) -> Iterator[bytes]:
-    """Reads a file in chunks."""
     units = {'B': 1, 'KB': 1024, 'MB': 1024**2, 'GB': 1024**3}
     size = int(chunk_size[:-2])
     unit = chunk_size[-2:].upper()
@@ -227,26 +190,23 @@ def chunk_file(
             yield chunk
 
 def init_worker():
-    """Initialize worker for dataloaders"""
     logger.info(f"Initializing worker process: {os.getpid()}")
     if torch.cuda.is_available():
         torch.cuda.init()
         logger.info(f"CUDA initialized in worker process: {os.getpid()}")
 
 def get_worker_init_fn(num_workers: int) -> Optional[callable]:
-    """Get worker initialization function if needed."""
     if num_workers > 0:
         return init_worker
     return None
 
-# Import the properly validated version from config_utils
 from .config_utils import load_yaml_config
 __all__ = [
     'setup_logging',
     'seed_everything',
     'get_memory_usage',
     'clear_memory',
-    'load_yaml_config',  # Re-exported from config_utils
+    'load_yaml_config',
     'parallel_map',
     'batch_iterator',
     'create_memmap_array',

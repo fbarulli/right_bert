@@ -146,19 +146,40 @@ def process_batch_parallel(tokenizer: PreTrainedTokenizerFast, texts: List[str],
 
 class CSVDataset(Dataset):
     """
-    A PyTorch Dataset for loading data from a CSV file. Uses memory-mapping
+    A PyTorch Dataset for loading data from a CSV file.  Uses memory-mapping
     for efficient handling of large datasets.
 
     Args:
-        data_path: Path to the CSV data file.
-        tokenizer: The Hugging Face tokenizer.
-        max_length: The maximum sequence length.
-        split: 'train' or 'val'.  Determines which portion of the data
+        data_path (Union[str, Path]): Path to the CSV data file.
+        tokenizer (PreTrainedTokenizerFast): The Hugging Face tokenizer.
+        max_length (int): The maximum sequence length.
+        split (str): 'train' or 'val'.  Determines which portion of the data
             to use (based on train_ratio).
-        train_ratio: The ratio of data to use for training (the rest
+        train_ratio (float): The ratio of data to use for training (the rest
             is used for validation).
-        cache_dir: Optional directory for caching.
+        cache_dir (Union[str, Path], optional): Directory for caching.
             Defaults to '.cache' in the project root.
+
+    Attributes:
+        data_path (Path): Path to the CSV data file.
+        tokenizer (PreTrainedTokenizerFast): The Hugging Face tokenizer.
+        max_length (int): The maximum sequence length.
+        split (str): 'train' or 'val'.
+        train_ratio (float): The ratio of data to use for training.
+        cache_dir (Path): Directory for caching.
+        cache_prefix (Path): Prefix for cache files.
+        total_rows (int): The total number of rows in the dataset.
+        start_idx (int): The starting index for the current split.
+        end_idx (int): The ending index for the current split.
+        input_ids (np.memmap): Memory-mapped array of input IDs.
+        attention_mask (np.memmap): Memory-mapped array of attention masks.
+        special_tokens_mask (np.memmap): Memory-mapped array of special token masks.
+        word_ids (np.memmap): Memory-mapped array of word IDs.
+        labels (np.memmap): Memory-mapped array of labels.
+
+    Methods:
+        __len__(): Returns the length of the dataset (for the current split).
+        __getitem__(idx): Retrieves a single data sample.
     """
 
     def __init__(
@@ -178,6 +199,7 @@ class CSVDataset(Dataset):
         self.split = split
         self.train_ratio = train_ratio
 
+        # Use provided cache_dir or default to project root
         if cache_dir is None:
             self.cache_dir = Path(os.getcwd()) / '.cache'
         else:
@@ -383,8 +405,8 @@ def csv_dataset_factory(
         data_path (Union[str, Path]): Path to the CSV data file.
         tokenizer (PreTrainedTokenizerFast): The Hugging Face tokenizer.
         max_length (int): The maximum sequence length.
-        split (str): 'train' or 'val'.
-        train_ratio (float): Ratio of data to use for training.
+        split: 'train' or 'val'.
+        train_ratio: Ratio of data to use for training.
         cache_dir (Union[str, Path], optional): Optional directory for caching.
 
     Returns:

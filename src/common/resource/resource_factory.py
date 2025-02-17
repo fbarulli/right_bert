@@ -1,4 +1,5 @@
 # src/common/resource/resource_factory.py
+# src/common/resource/resource_factory.py
 from __future__ import annotations
 import logging
 from typing import Dict, Any, Union
@@ -36,7 +37,7 @@ def create_resource(
         logger.info(f"Creating resource of type: {resource_type}")
         if resource_type == 'dataset':
             # Ensure required arguments are present
-            if 'data_path' not in config['data'] or not config['data']['data_path']:
+            if not 'data_path' in config['data'] or not config['data']['data_path']:
                 raise ValueError("data_path must be specified in config for dataset creation.")
             if 'tokenizer' not in kwargs:
                 raise ValueError("tokenizer must be provided for dataset creation.")
@@ -53,12 +54,10 @@ def create_resource(
                     max_predictions=config['data']['max_predictions'],
                     max_span_length=config['data']['max_span_length']
                 )
-            # Add other dataset types (e.g., for classification) here
             else:
                 raise ValueError(f"Unknown stage for dataset creation: {stage}")
 
         elif resource_type == 'dataloader':
-            # Ensure required arguments are present
             if 'dataset' not in kwargs:
                 raise ValueError("dataset must be provided for dataloader creation.")
             batch_size = config['training']['batch_size']
@@ -66,9 +65,9 @@ def create_resource(
             return get_dataloader_manager().create_dataloader(
                 dataset=kwargs['dataset'],
                 batch_size=batch_size,
-                shuffle=kwargs.get('split', 'train') == 'train',  # Shuffle only for training
+                shuffle=kwargs.get('split', 'train') == 'train',
                 num_workers=num_workers,
-                pin_memory=True,  # Always use pinned memory if CUDA is available
+                pin_memory=True,
                 config=config
             )
         else:

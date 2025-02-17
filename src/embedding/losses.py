@@ -1,4 +1,5 @@
 # src/embedding/losses.py
+# src/embedding/losses.py
 from __future__ import annotations
 import torch
 import torch.nn as nn
@@ -34,7 +35,7 @@ class InfoNCELoss(nn.Module):
         super().__init__()
         self.temperature = temperature
         self.reduction = reduction
-        self.contrast_mode = contrast_mode  # Added for future flexibility
+        self.contrast_mode = contrast_mode
         self.chunk_size = chunk_size
         if self.contrast_mode != 'all':
             raise NotImplementedError("Only contrast_mode='all' is currently supported.")

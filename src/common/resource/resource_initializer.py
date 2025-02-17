@@ -1,3 +1,4 @@
+# src/common/resource/resource_initializer.py
 # src/common/resource/resource_initializer.py (CORRECTED)
 from __future__ import annotations
 import logging
@@ -33,6 +34,9 @@ class ResourceInitializer:
             get_parameter_manager,
             get_storage_manager,
             get_directory_manager,
+            get_worker_manager,
+            get_wandb_manager,
+            get_optuna_manager
         )
 
         # Initialize CUDA *first*
@@ -60,6 +64,13 @@ class ResourceInitializer:
         directory_manager.ensure_initialized(cls._config)
         storage_manager = get_storage_manager()
         storage_manager.ensure_initialized(cls._config)
+        wandb_manager = get_wandb_manager()
+        wandb_manager.ensure_initialized(cls._config)
+        optuna_manager = get_optuna_manager()
+        optuna_manager.ensure_initialized(cls._config)
+        worker_manager = get_worker_manager()
+        worker_manager.ensure_initialized(cls._config)
+
 
         logger.info("Process resources initialized.")
 
@@ -78,10 +89,27 @@ class ResourceInitializer:
             get_metrics_manager,
             get_parameter_manager,
             get_storage_manager,
-            get_directory_manager
+            get_directory_manager,
+            get_wandb_manager,
+            get_optuna_manager,
+            get_worker_manager
         )
         # Clean up managers (reverse order of initialization)
-
+        try:
+            worker_manager = get_worker_manager()
+            worker_manager.cleanup_workers()
+        except Exception as e:
+            logger.warning(f"Error during worker manager cleanup: {e}")
+        try:
+            optuna_manager = get_optuna_manager()
+            optuna_manager.cleanup()
+        except Exception as e:
+            logger.warning(f"Error during optuna manager cleanup: {e}")
+        try:
+            wandb_manager = get_wandb_manager()
+            wandb_manager.finish()
+        except Exception as e:
+            logger.warning(f"Error during wandb manager cleanup")
         try:
             storage_manager = get_storage_manager()
             storage_manager.cleanup_all()
@@ -106,6 +134,7 @@ class ResourceInitializer:
              logger.warning(f"Error during model manager cleanup: {e}")
         try:
             tokenizer_manager = get_tokenizer_manager()
+            tokenizer_manager.cleanup_all() # Cleanup tokenizer cache
         except Exception as e:
              logger.warning(f"Error during tokenizer manager cleanup: {e}")
         try:

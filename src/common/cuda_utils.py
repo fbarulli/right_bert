@@ -31,7 +31,7 @@ def get_cuda_device_properties(device_id: Optional[int] = None) -> Dict[str, Any
     props = torch.cuda.get_device_properties(device)
     return {
         'name': props.name,
-        'total_memory': props.total_memory / 1024**3,  # GB
+        'total_memory': props.total_memory / 1024**3,
         'major': props.major,
         'minor': props.minor,
         'multi_processor_count': props.multi_processor_count
@@ -50,9 +50,9 @@ def get_cuda_memory_stats() -> Dict[str, float]:
         return {}
 
     return {
-        'allocated': torch.cuda.memory_allocated() / 1024**3,  # GB
-        'cached': torch.cuda.memory_reserved() / 1024**3,  # GB
-        'max_allocated': torch.cuda.max_memory_allocated() / 1024**3  # GB
+        'allocated': torch.cuda.memory_allocated() / 1024**3,
+        'cached': torch.cuda.memory_reserved() / 1024**3,
+        'max_allocated': torch.cuda.max_memory_allocated() / 1024**3
     }
 def reset_cuda_stats() -> None:
     """Reset CUDA memory statistics."""

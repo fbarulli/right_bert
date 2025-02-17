@@ -1,4 +1,5 @@
 # src/common/resource/resource_pool.py
+# src/common/resource/resource_pool.py
 import torch
 import logging
 import os
@@ -22,12 +23,12 @@ class ResourcePool:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if self.device.type == 'cpu':
             logger.warning("CUDA not available, using CPU")
-            return  # No need to manage CUDA resources if CUDA isn't available
+            return
 
-        self.memory_limit = int(memory_limit_gb * 1024 * 1024 * 1024)  # Convert to bytes
+        self.memory_limit = int(memory_limit_gb * 1024 * 1024 * 1024)
         self.lock = threading.Lock()
         self.last_cleanup = 0
-        self.cleanup_interval = 0.1  # seconds
+        self.cleanup_interval = 0.1
 
         if torch.cuda.is_available():
             total_memory = torch.cuda.get_device_properties(0).total_memory
@@ -37,7 +38,7 @@ class ResourcePool:
     def check_memory(self, size_bytes: Optional[int] = None) -> bool:
         """Check if memory usage is within limits."""
         if self.device.type == 'cpu':
-            return True  # Always allow on CPU
+            return True
 
         try:
             current_allocated = torch.cuda.memory_allocated(self.device)
@@ -67,7 +68,7 @@ class ResourcePool:
                         logger.warning(f"Memory request for {size_bytes/1e9:.2f}GB exceeds limit")
                         return False
 
-                return True  # Indicate successful request
+                return True
 
         except Exception as e:
             logger.error(f"Error requesting memory: {str(e)}")

@@ -1,4 +1,5 @@
 # src/studies.py
+# src/studies.py
 import logging
 import os
 from pathlib import Path
@@ -16,7 +17,7 @@ from src.common import (
     get_shared_tokenizer
 )
 from src.embedding.models import embedding_model_factory
-from src.embedding.embedding_training import train_embeddings, validate_embeddings  # Corrected import
+from src.embedding.embedding_training import train_embeddings, validate_embeddings
 from src.common.study.objective_factory import ObjectiveFactory
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,6 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
 
     logger.info("Creating embedding study")
 
-    # Get necessary managers
     optuna_manager = get_optuna_manager()
     parameter_manager = get_parameter_manager()
     directory_manager = get_directory_manager()
@@ -43,13 +43,12 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
         objective_factory = ObjectiveFactory(config, output_path)
         return objective_factory.objective(trial)
 
-    # Run optimization
     try:
         if config["training"]["num_trials"] > 1:
             wandb_manager = get_wandb_manager()
-            wandb_manager.init_optimization()  # Initialize wandb for the entire optimization
+            wandb_manager.init_optimization()
             logger.info("Initializin optuna optimize")
-            best_trial = optuna_manager.optimize(config, output_path) # Pass config to optimize
+            best_trial = optuna_manager.optimize(config, output_path)
             if best_trial:
                 best_params = best_trial.params
                 best_value = best_trial.value
@@ -57,11 +56,11 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
             else:
                 logger.error("Optimization failed or no trials completed successfully.")
                 return
-        else: # Run for one time
-            trial = optuna.trial.FixedTrial(config['hyperparameters'])  # Use a FixedTrial
+        else:
+            trial = optuna.trial.FixedTrial(config['hyperparameters'])
             objective_factory = ObjectiveFactory(config, output_path)
             objective_factory.objective(trial)
-            best_params = config['hyperparameters'] # No optimization
+            best_params = config['hyperparameters']
     except Exception as e:
         logger.error(f"Study optimization failed: {e}")
         return
@@ -81,9 +80,9 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
 
     final_config['data']['train_ratio'] = 1.0
 
-    tokenizer = get_shared_tokenizer() #It is loaded on __init__
+    tokenizer = get_shared_tokenizer()
     train_loader, _, train_dataset, _ = data_manager.create_dataloaders(
-        config = final_config # All data from config
+        config = final_config
     )
 
     final_model = embedding_model_factory(final_config)
@@ -112,10 +111,10 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
 
     logger.info("Validating final embeddings...")
     validate_embeddings(
-        model_path=str(output_dir),  # Use the output directory where the model was saved
-        tokenizer_name= config['model']['name'],  # Use the original model name for the tokenizer
-        output_dir=str(output_dir / "validation"),  # Create a subdirectory for validation outputs
-        words_to_check=["good", "bad", "movie", "film", "actor", "director", "terrible", "excellent"]  # Example words
+        model_path=str(output_dir),
+        tokenizer_name= config['model']['name'],
+        output_dir=str(output_dir / "validation"),
+        words_to_check=["good", "bad", "movie", "film", "actor", "director", "terrible", "excellent"]
     )
 
 

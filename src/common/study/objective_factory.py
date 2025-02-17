@@ -1,3 +1,4 @@
+# src/common/study/objective_factory.py
 # src/common/study/objective_factory.py (CORRECTED)
 from __future__ import annotations
 import logging
@@ -18,7 +19,7 @@ from src.common import (
 )
 
 from src.embedding.embedding_training import train_embeddings
-from src.classification.classification_training import run_classification_optimization, train_final_model
+from src.classification.classification_training import train_final_model
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +53,11 @@ class ObjectiveFactory:
             model_manager = get_model_manager()
             tokenizer_manager = get_tokenizer_manager()
             directory_manager = get_directory_manager()
+            if config["training"]["num_trials"] > 1:
+                wandb_manager = get_wandb_manager()
 
             config = parameter_manager.get_trial_config(trial)
             if config["training"]["num_trials"] > 1:
-                wandb_manager = get_wandb_manager()
                 wandb_manager.init_trial(trial.number)
 
             if config['model']['stage'] == 'embedding':
@@ -65,7 +67,7 @@ class ObjectiveFactory:
                 train_loader, val_loader, train_dataset, val_dataset = data_manager.create_dataloaders(
                     config=config
                 )
-                from src.embedding.models import embedding_model_factory
+                from src.embedding.model import embedding_model_factory
 
                 model = embedding_model_factory(config, trial)
 
