@@ -1,4 +1,4 @@
-#main.py
+main.py
 import logging
 import os
 import traceback
@@ -18,15 +18,15 @@ from src.common import (
     get_optuna_manager,
     get_shared_tokenizer,
     set_shared_tokenizer,
-    get_amp_manager, # ADDED IMPORT
-    get_cuda_manager, # ADDED IMPORT
-    get_tensor_manager, # ADDED IMPORT
-    get_batch_manager, # ADDED IMPORT
-    get_metrics_manager, # ADDED IMPORT
-    get_dataloader_manager, # ADDED IMPORT
-    get_storage_manager, # ADDED IMPORT
-    get_resource_manager, # ADDED IMPORT
-    get_worker_manager # ADDED IMPORT
+    get_amp_manager,
+    get_cuda_manager,
+    get_tensor_manager,
+    get_batch_manager,
+    get_metrics_manager,
+    get_dataloader_manager,
+    get_storage_manager,
+    get_resource_manager,
+    get_worker_manager
 )
 from src.embedding.model import embedding_model_factory
 from src.embedding.embedding_training import train_embeddings
@@ -34,30 +34,29 @@ from src.embedding.embedding_training import train_embeddings
 
 logger = logging.getLogger(__name__)
 
-def train_model(config: Dict[str, Any], wandb_manager = None) -> None: #Added wandb manager
+def train_model(config: Dict[str, Any], wandb_manager = None) -> None:
     try:
         seed_everything(config['training']['seed'])
         output_dir = Path(config['output']['dir'])
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        cuda_manager = get_cuda_manager() # Initialize cuda_manager FIRST
-        cuda_manager.setup(config) #Setup CUDA
+        cuda_manager = get_cuda_manager()
+        cuda_manager.setup(config)
 
         data_manager = get_data_manager()
         model_manager = get_model_manager()
         tokenizer_manager = get_tokenizer_manager()
         directory_manager = get_directory_manager()
         parameter_manager = get_parameter_manager()
-        amp_manager = get_amp_manager() # Initialize amp_manager - AFTER CUDA
-        tensor_manager = get_tensor_manager() # initialize tensor_manager
-        batch_manager = get_batch_manager() #Initialize batch_manager
-        metrics_manager = get_metrics_manager() # initialize metrics_manager
-        dataloader_manager = get_dataloader_manager() # initialize dataloader_manager
-        storage_manager = get_storage_manager() # initialize storage_manager
-        resource_manager = get_resource_manager() #initialize resource_manager
-        optuna_manager = get_optuna_manager() # intialize optuna_manager
-        worker_manager = get_worker_manager() # initialize worker_manager
-        #wandb_manager = get_wandb_manager() # Initialize wandb_manager - initialized in main
+        amp_manager = get_amp_manager()
+        tensor_manager = get_tensor_manager()
+        batch_manager = get_batch_manager()
+        metrics_manager = get_metrics_manager()
+        dataloader_manager = get_dataloader_manager()
+        storage_manager = get_storage_manager()
+        resource_manager = get_resource_manager()
+        optuna_manager = get_optuna_manager()
+        worker_manager = get_worker_manager()
 
 
         if config['model']['stage'] == 'embedding':
@@ -79,7 +78,7 @@ def train_model(config: Dict[str, Any], wandb_manager = None) -> None: #Added wa
                 metrics_dir= str(directory_manager.base_dir / "metrics"),
                 is_trial=False,
                 trial=None,
-                wandb_manager=wandb_manager, #Use passed in manager
+                wandb_manager=wandb_manager,
                 job_id=0,
                 train_dataset=train_dataset,
                 val_dataset=val_dataset
@@ -104,7 +103,7 @@ def objective(trial):
     if config["training"]["num_trials"] > 1:
         wandb_manager.init_trial(trial.number)
 
-    train_model(config, wandb_manager=wandb_manager) #pass wandb manager
+    train_model(config, wandb_manager=wandb_manager)
 
     best_val_loss = trial.user_attrs.get('best_val_loss', float('inf'))
     return best_val_loss
