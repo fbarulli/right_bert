@@ -38,7 +38,7 @@ training:
 data:
   csv_path: "sample_m.csv"  # do not change
   train_ratio: 0.8
-  max_length: 512
+  max_length: 100
   embedding_mask_probability: 0.15  # Standard BERT masking probability
   max_predictions: 20
   max_span_length: 3  # Allow 1-3 word spans for better context
