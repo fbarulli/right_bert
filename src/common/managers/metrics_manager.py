@@ -4,16 +4,100 @@ import torch
 import torch.nn as nn
 from typing import Dict, Any, Optional, List
 import math
+import json
+from pathlib import Path
 
 from src.common.managers.base_manager import BaseManager
 from src.common.managers import get_cuda_manager
 
 logger = logging.getLogger(__name__)
 
-class MetricsManager(BaseManager):
+class MetricsLogger:
+    """Logs and manages metrics during training."""
+    def __init__(self,
+                metrics_dir: Path,
+                is_trial: bool = False,
+                trial: Optional['optuna.Trial'] = None,
+                wandb_manager: Optional['src.common.managers.wandb_manager.WandbManager'] = None, #Corrected type
+                job_id: Optional[int] = None):
+        """
+        Initialize the MetricsLogger
 
-    def __init__(self):
-        super().__init__()
+        Args:
+            metrics_dir: Directory to save metrics to
+            is_trial: If the logger is for an Optuna trial
+            trial: The optuna trial object
+            wandb_manager: WandbManager for logging to W&B
+            job_id: Optional job ID.
+        """
+
+        self.metrics_dir = Path(metrics_dir)
+        self.metrics_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+        self.is_trial = is_trial
+        self.trial = trial
+        self.wandb_manager = wandb_manager
+        self.job_id = job_id
+        self.epoch_metrics: List[Dict[str, float]] = []
+        self.batch_metrics: List[Dict[str, float]] = []
+
+        logger.info(f"MetricsLogger initialized:\n"
+            f"- Metrics dir: {self.metrics_dir}\n"
+            f"- Is trial: {self.is_trial}\n"
+            f"- Job ID: {self.job_id}")
+
+
+    def log_metrics(self, metrics: Dict[str, float], phase: str, step: Optional[int] = None) -> None:
+        """
+        Logs metrics to console, file, and optionally WandB.  Also stores
+        metrics internally for later analysis/plotting.
+
+        Args:
+            metrics: Dictionary of metrics to log.
+            phase: Phase of training (e.g., 'train', 'val').
+            step: Current training step (global step).
+        """
+
+        if step is None:
+            step = 0  # Provide a default value
+
+        log_str = f"[{phase}] Step {step}:" + "".join(f" {k}={v:.4f}," for k, v in metrics.items())
+        logger.info(log_str)
+
+        # Log to WandB
+        if self.wandb_manager and self.wandb_manager.enabled:
+            try:
+                self.wandb_manager.log_metrics(metrics, step=step)
+            except Exception as e:
+                logger.error(f"Error logging to WandB: {e}", exc_info=True)
+
+
+        # Store metrics internally
+        metrics['phase'] = phase
+        metrics['step'] = step
+        if 'epoch' in phase:
+            self.epoch_metrics.append(metrics)
+        else:
+             self.batch_metrics.append(metrics)
+        # Log to file
+        try:
+            if self.is_trial and self.trial:
+                file_name = f"trial_{self.trial.number}_metrics.json"
+            else:
+                file_name = "final_metrics.json" if self.job_id is None else f"job_{self.job_id}_metrics.json"
+
+            file_path = self.metrics_dir / file_name
+            with open(file_path, 'a') as f:
+                json.dump(metrics, f)
+                f.write('\n')
+        except Exception as e:
+            logger.error(f"Error writing metrics to file: {e}", exc_info=True)
+
+class MetricsManager(BaseManager):
+    """Manages metric computation."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+      super().__init__(config)
+
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         super()._initialize_process_local(config)
@@ -22,9 +106,10 @@ class MetricsManager(BaseManager):
 
         self._local.device = None
         self._local.loss_fct = None
-        self._local.pad_token_id = 0  # You might get this from the tokenizer config
+
 
     def get_device(self) -> torch.device:
+        """Gets the device (CUDA or CPU)."""
         if self._local.device is None:
             cuda_manager = get_cuda_manager()
             if cuda_manager.is_available():
@@ -34,12 +119,23 @@ class MetricsManager(BaseManager):
         return self._local.device
 
     def get_loss_fct(self) -> nn.Module:
+        """Gets the loss function."""
         if self._local.loss_fct is None:
             self._local.loss_fct = nn.CrossEntropyLoss(ignore_index=-100, reduction='sum').to(self.get_device())
         return self._local.loss_fct
 
     def compute_accuracy(self, logits: torch.Tensor, labels: torch.Tensor, k: int = 1) -> Dict[str, float]:
-        """Compute top-k accuracy for masked tokens."""
+        """Compute top-k accuracy for masked tokens.
+
+        Args:
+            logits: Predicted logits from the model.
+            labels: Ground truth labels.
+            k: Value for top-k accuracy.
+
+        Returns:
+            Dict[str, float]: Dictionary with 'top1' and 'top{k}' accuracy.
+
+        """
         self.ensure_initialized()
 
         # Flatten logits and labels
@@ -76,8 +172,18 @@ class MetricsManager(BaseManager):
             f"- Top-{k} correct: {int(topk * total)}"
         )
         return {'top1': top1, f'top{k}': topk}
+
+
     def compute_embedding_metrics(self, outputs: Dict[str, torch.Tensor], batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
-        """Compute embedding metrics."""
+        """Compute embedding metrics.
+
+        Args:
+          outputs: Model outputs.
+          batch: The input batch
+
+        Returns:
+          Dict[str, float]: Dictionary of metrics (loss, embedding_loss, ppl, accuracy, top5_accuracy, mask_ratio)
+        """
         self.ensure_initialized()
         try:
             logits = outputs['logits']
@@ -139,12 +245,19 @@ class MetricsManager(BaseManager):
                 'mask_ratio': 0.0
             }
 
-    def compute_classification_metrics(
-        self,
-        outputs: Dict[str, torch.Tensor],
-        batch: Dict[str, torch.Tensor]
-    ) -> Dict[str, float]:
-        """Compute classification metrics."""
+
+
+    def compute_classification_metrics(self, outputs: Dict[str, torch.Tensor], batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        """Compute classification metrics.
+
+        Args:
+            outputs: Model outputs
+            batch: The input batch.
+
+        Returns:
+            Dict[str, float]: Dictionary with 'loss' and 'accuracy'.
+
+        """
 
         self.ensure_initialized()
 
@@ -173,4 +286,5 @@ class MetricsManager(BaseManager):
                 'loss': float('inf'),
                 'accuracy': 0.0
             }
-__all__ = ['MetricsManager']
+
+__all__ = ['MetricsManager', 'MetricsLogger']

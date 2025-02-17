@@ -1,7 +1,6 @@
-# src/common/__init__.py (CORRECTED)
-"""Manager access layer to prevent circular imports."""
-
+# src/common/__init__.py (FINAL CORRECTED)
 from __future__ import annotations
+"""Manager access layer to prevent circular imports."""
 from pathlib import Path
 import yaml
 
@@ -21,101 +20,85 @@ _tokenizer_lock = __import__('multiprocessing').Lock()
 
 def get_amp_manager():
     from src.common.managers.amp_manager import AMPManager
-    manager = AMPManager()
-    manager.ensure_initialized(_config)  # Pass config
+    manager = AMPManager(_config)  # Pass the config
     return manager
 
 def get_batch_manager():
     from src.common.managers.batch_manager import BatchManager
-    manager = BatchManager()
-    manager.ensure_initialized(_config) # Pass config
+    manager = BatchManager(_config) # Pass config
     return manager
 
 def get_cuda_manager():
     from src.common.managers.cuda_manager import CUDAManager
-    manager = CUDAManager()
-    manager.ensure_initialized(_config) # Pass config
+    manager = CUDAManager(_config) #Pass config
     return manager
 
 def get_data_manager():
     from src.common.managers.data_manager import DataManager
-    manager = DataManager()
-    manager.ensure_initialized(_config) # Pass config
+    manager = DataManager(_config)
     return manager
 
 def get_dataloader_manager():
     from src.common.managers.dataloader_manager import DataLoaderManager
-    manager =  DataLoaderManager()
-    manager.ensure_initialized(_config) # Pass config
+    manager =  DataLoaderManager(_config)
     return manager
 
 def get_directory_manager():
     from src.common.managers.directory_manager import DirectoryManager
-    manager =  DirectoryManager(Path(_config['output']['dir']))
-    manager.ensure_initialized(_config) # Pass config
+    manager =  DirectoryManager(Path(_config['output']['dir']), _config) # Pass config
     return manager
 
 
 def get_metrics_manager():
     from src.common.managers.metrics_manager import MetricsManager
-    manager = MetricsManager()
-    manager.ensure_initialized(_config) # Pass config
+    manager = MetricsManager(_config)
     return manager
 
 def get_model_manager():
     from src.common.managers.model_manager import ModelManager
-    manager = ModelManager()
-    manager.ensure_initialized(_config) # Pass config
+    manager = ModelManager(_config)
     return manager
 
 def get_parameter_manager():
     from src.common.managers.parameter_manager import ParameterManager
     manager = ParameterManager(_config) # config in init
-    manager.ensure_initialized(_config)  # Pass config
     return manager
 
 
 def get_resource_manager():
     from src.common.managers.resource_manager import ProcessResourceManager
     manager = ProcessResourceManager(_config) # config in init
-    manager.ensure_initialized(_config)  # Pass config
     return manager
 
 
 def get_storage_manager():
     from src.common.managers.storage_manager import StorageManager
-    manager = StorageManager(Path(_config['output']['storage_dir'])) # path in init
-    manager.ensure_initialized(_config)  # Pass config
+    manager = StorageManager(Path(_config['output']['storage_dir']))  # Pass config
     return manager
 
 def get_tensor_manager():
     from src.common.managers.tensor_manager import TensorManager
-    manager = TensorManager()
-    manager.ensure_initialized(_config) # Pass config
+    manager = TensorManager(_config)
     return manager
 
 def get_tokenizer_manager():
     from src.common.managers.tokenizer_manager import TokenizerManager
-    manager = TokenizerManager()
-    manager.ensure_initialized(_config)
+    manager = TokenizerManager(_config) #Pass config
     return manager
 
 def get_worker_manager():
     from src.common.managers.worker_manager import WorkerManager
-    manager = WorkerManager(n_jobs= _config['training']['n_jobs'], config=_config, study_name="embedding_study", storage_url = f"sqlite:///{Path(_config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60") # config in init
-    manager.ensure_initialized(_config)
+    manager = WorkerManager(config=_config, study_name="embedding_study", storage_url = f"sqlite:///{Path(_config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60")
     return manager
 
 def get_wandb_manager():
     from src.common.managers.wandb_manager import WandbManager
     manager =  WandbManager(_config, "embedding_study") # config in init
-    manager.ensure_initialized(_config)
     return manager
 
 def get_optuna_manager():
     from src.common.managers.optuna_manager import OptunaManager
-    manager = OptunaManager(study_name="embedding_study", config=_config, storage_dir=Path(_config['output']['dir']) / 'storage') # config in init
-    manager.ensure_initialized(_config)
+    manager = OptunaManager(study_name="embedding_study", config=_config, storage_dir=Path(_config['output']['dir']) / 'storage')
     return manager
 
 def set_shared_tokenizer(tokenizer):

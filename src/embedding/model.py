@@ -1,4 +1,4 @@
-# src/embedding/models.py
+# src/embedding/model.py (CORRECTED)
 from __future__ import annotations
 import logging
 import torch
@@ -7,21 +7,22 @@ from transformers import BertPreTrainedModel, BertModel, BertConfig
 from typing import Dict, Any, Optional, Tuple, Union
 import optuna
 
-from src.common.managers import (
-    get_cuda_manager,
-    get_batch_manager,
-    get_tensor_manager
-)
+#DELAYED IMPORTS
+# from src.common.managers import (
+#     get_cuda_manager,
+#     get_batch_manager,
+#     get_tensor_manager
+# )
 
-cuda_manager = get_cuda_manager()
-batch_manager = get_batch_manager()
-tensor_manager = get_tensor_manager()
+# cuda_manager = get_cuda_manager()
+# batch_manager = get_batch_manager()
+# tensor_manager = get_tensor_manager()
 
 logger = logging.getLogger(__name__)
 
 class EmbeddingBert(BertPreTrainedModel):
     """BERT model for learning embeddings through masked token prediction."""
-    
+
     def __init__(
         self,
         config: BertConfig,
@@ -29,39 +30,39 @@ class EmbeddingBert(BertPreTrainedModel):
     ):
         """
         Initialize model.
-        
+
         Args:
             config: Model configuration
             tie_weights: Whether to tie input/output embeddings
         """
         super().__init__(config)
-        
+
         self.bert = BertModel(config)
         self.cls = BertEmbeddingHead(config)
-        
+
         self.post_init()
-        
+
         if tie_weights:
             self._tie_or_clone_weights(
                 self.cls.predictions.decoder,
                 self.bert.embeddings.word_embeddings
             )
-        
+
         logger.info(
             f"Initialized EmbeddingBert with:\n"
             f"- Hidden size: {config.hidden_size}\n"
             f"- Vocab size: {config.vocab_size}\n"
             f"- Tied weights: {tie_weights}"
         )
-    
+
     def get_output_embeddings(self) -> nn.Linear:
         """Get output embeddings layer."""
         return self.cls.predictions.decoder
-    
+
     def set_output_embeddings(self, new_embeddings: nn.Linear):
         """Set output embeddings layer."""
         self.cls.predictions.decoder = new_embeddings
-    
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -75,7 +76,7 @@ class EmbeddingBert(BertPreTrainedModel):
     ) -> Union[Tuple, Dict[str, torch.Tensor]]:
         """
         Forward pass.
-        
+
         Args:
             input_ids: Input token IDs
             attention_mask: Attention mask
@@ -85,10 +86,12 @@ class EmbeddingBert(BertPreTrainedModel):
             output_hidden_states: Whether to output all hidden states
             output_attentions: Whether to output attention weights
             return_dict: Whether to return dict or tuple
-            
+
         Returns:
             Model outputs
         """
+        from src.common.managers import get_batch_manager
+        batch_manager = get_batch_manager()
         inputs = {
             'input_ids': input_ids,
             'attention_mask': attention_mask
@@ -99,26 +102,26 @@ class EmbeddingBert(BertPreTrainedModel):
             inputs['position_ids'] = position_ids
         if labels is not None:
             inputs['labels'] = labels
-            
-        inputs = batch_manager.prepare_batch(inputs, self.device)
-        
+
+        inputs = batch_manager.prepare_batch(inputs, self.device) # type: ignore
+
         outputs = self.bert(
             input_ids=inputs['input_ids'],
             attention_mask=inputs['attention_mask'],
-            token_type_ids=inputs.get('token_type_ids'),
-            position_ids=inputs.get('position_ids'),
+            token_type_ids= inputs.get('token_type_ids'),
+            position_ids= inputs.get('position_ids'),
             output_hidden_states=output_hidden_states,
             output_attentions=output_attentions,
             return_dict=True
         )
-        
+
         sequence_output = outputs.last_hidden_state
         prediction_scores = self.cls(sequence_output)
-        
+
         loss = None
         if 'labels' in inputs:
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
-            
+
             active_loss = inputs['labels'].view(-1) != -100
             if active_loss.any():
                 active_logits = prediction_scores.view(-1, self.config.vocab_size)[active_loss]
@@ -126,7 +129,7 @@ class EmbeddingBert(BertPreTrainedModel):
                 loss = loss_fct(active_logits, active_labels)
             else:
                 loss = torch.tensor(0.0, device=self.device)
-        
+
         if return_dict:
             return {
                 'loss': loss,
@@ -134,30 +137,30 @@ class EmbeddingBert(BertPreTrainedModel):
                 'hidden_states': outputs.hidden_states if output_hidden_states else None,
                 'attentions': outputs.attentions if output_attentions else None
             }
-        
+
         output = (prediction_scores,) + outputs[2:]
         return ((loss,) + output) if loss is not None else output
 
 class BertEmbeddingHead(nn.Module):
     """BERT embedding prediction head with proper initialization."""
-    
+
     def __init__(self, config: BertConfig):
         """
         Initialize embedding prediction head.
-        
+
         Args:
             config: Model configuration
         """
         super().__init__()
         self.predictions = BertLMPredictionHead(config)
-    
+
     def forward(self, sequence_output: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
-        
+
         Args:
             sequence_output: Sequence output from BERT
-            
+
         Returns:
             Prediction scores
         """
@@ -166,28 +169,28 @@ class BertEmbeddingHead(nn.Module):
 
 class BertLMPredictionHead(nn.Module):
     """BERT language model prediction head."""
-    
+
     def __init__(self, config: BertConfig):
         """
         Initialize prediction head.
-        
+
         Args:
             config: Model configuration
         """
         super().__init__()
         self.transform = BertPredictionHeadTransform(config)
-        
+
         self.decoder = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.bias = nn.Parameter(torch.zeros(config.vocab_size))
         self.decoder.bias = self.bias
-    
+
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
-        
+
         Args:
             hidden_states: Hidden states from transform layer
-            
+
         Returns:
             Prediction scores
         """
@@ -197,31 +200,31 @@ class BertLMPredictionHead(nn.Module):
 
 class BertPredictionHeadTransform(nn.Module):
     """BERT prediction head transform."""
-    
+
     def __init__(self, config: BertConfig):
         """
         Initialize transform layer.
-        
+
         Args:
             config: Model configuration
         """
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        
+
         if isinstance(config.hidden_act, str):
             self.transform_act_fn = nn.GELU()
         else:
             self.transform_act_fn = config.hidden_act
-            
+
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-    
+
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
-        
+
         Args:
             hidden_states: Hidden states from BERT
-            
+
         Returns:
             Transformed hidden states
         """
@@ -257,9 +260,9 @@ def embedding_model_factory(config: Dict[str, Any], trial: Optional[optuna.Trial
             config['hyperparameters']['attention_probs_dropout_prob']['max']
         )
     else:
-        model_config.hidden_dropout_prob = config['model']
-        model_config.attention_probs_dropout_prob = config['model']
+        model_config.hidden_dropout_prob = config['model']['hidden_dropout_prob']
+        model_config.attention_probs_dropout_prob = config['model']['attention_probs_dropout_prob']
 
 
-    model = EmbeddingBert(config=model_config, tie_weights=config['model'])
+    model = EmbeddingBert(config=model_config, tie_weights= config['model']['tie_weights'])
     return model

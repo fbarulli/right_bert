@@ -16,20 +16,20 @@ logger = logging.getLogger(__name__)
 class StorageManager(BaseManager):
     """Manages Optuna storage and study persistence."""
 
-    def __init__(self, storage_dir: Path):
-        super().__init__()
+    def __init__(self, storage_dir: Path, config: Optional[Dict[str, Any]] = None):
+        """Initialize with storage directory."""
+        super().__init__(config)
         self.storage_dir = storage_dir
-
-    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """Initialize process-local attributes."""
-        if not hasattr(self, 'storage_dir') or not isinstance(self.storage_dir, Path):
-            raise ValueError("StorageManager must be initialized with a storage_dir Path object.")
-
         self.storage_path = self.storage_dir / 'optuna.db'
         self.lock_path = self.storage_dir / 'optuna.lock'
         self.history_path = self.storage_dir / 'trial_history.json'
         self.trials_dir = self.storage_dir / "trials"
         self.profiler_dir = self.storage_dir / 'profiler'
+
+    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize process-local attributes."""
+        super()._initialize_process_local(config)
+
         # Create directories
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.trials_dir.mkdir(exist_ok=True)
@@ -85,7 +85,7 @@ class StorageManager(BaseManager):
         with open(self.history_path, 'w') as f:
             json.dump(history, f, indent=2)
         logger.info(f"\nSaved trial history to {self.history_path}")
-    
+
     def get_storage_url(self) -> str:
         return f"sqlite:///{self.storage_path}?timeout=60"
 
