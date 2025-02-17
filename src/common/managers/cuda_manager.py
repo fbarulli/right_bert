@@ -1,3 +1,5 @@
+# src/common/managers/cuda_manager.py (FINAL CORRECTED)
+
 import os
 import torch
 import logging
@@ -13,54 +15,45 @@ logger = logging.getLogger(__name__)
 
 class CUDAManager(BaseManager):
     """Process-local CUDA manager."""
-    def __init__(self):
-        super().__init__() # Initialize base
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__(config) # Initialize base
+        self.device = None # Initialize device
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""
+        super()._initialize_process_local(config)
         try:
-            super()._initialize_process_local(config)
 
             logger.info("Initializing CUDAManager for process %s", os.getpid())
-
-            self._local.memory_allocated = 0.0
-            self._local.memory_cached = 0.0
+            # Initialize CUDA if available
             if torch.cuda.is_available():
-                torch.cuda.reset_peak_memory_stats()
-                torch.cuda.reset_max_memory_allocated()
-
-            self._local.device = None
-            self._local.models = weakref.WeakSet()
-
-            if torch.cuda.is_available():
-                allocated = torch.cuda.memory_allocated() / 1024**3
-                cached = torch.cuda.memory_reserved() / 1024**3
-                logger.info(
-                    f"Initial CUDA memory state for process {self._local.pid}:\n"
-                    f"- Allocated: {allocated:.2f}GB\n"
-                    f"- Cached: {cached:.2f}GB"
-                )
-
-            self._local.settings_initialized = True
-            logger.info("CUDA manager initialization complete")
-
+                try:
+                    # Attempt to initialize CUDA explicitly. This is crucial.
+                    torch.cuda.init()  # Explicitly initialize
+                    self.device = torch.device("cuda")
+                    logger.info(f"CUDA initialized successfully for process {os.getpid()}.  Device: {self.device}")
+                except Exception as e:
+                    logger.error(f"CUDA initialization failed: {e}")
+                    self.device = torch.device("cpu")  # Fallback to CPU
+                    logger.warning(f"Falling back to CPU for process {os.getpid()}.")
+            else:
+                self.device = torch.device("cpu")
+                logger.warning(f"CUDA not available, using CPU for process {os.getpid()}.")
         except Exception as e:
-            logger.error(f"Failed to initialize CUDA manager: {str(e)}")
-            logger.error(traceback.format_exc())
-            if hasattr(self._local, 'settings_initialized'):
-                delattr(self._local, 'settings_initialized')
+            logger.critical(f"Failed to initialize CUDAManager: {e}")
             raise
+
     def is_available(self) -> bool:
         return torch.cuda.is_available()
 
     def get_device(self) -> torch.device:
         self.ensure_initialized()
-        if self._local.device is None:
+        if self.device is None:
             if self.is_available():
-                self._local.device = torch.device('cuda:0')
+                self.device = torch.device('cuda:0')
             else:
-                self._local.device = torch.device('cpu')
-        return self._local.device
+                self.device = torch.device('cpu')
+        return self.device
 
     def setup(self, config: Dict[str, Any]) -> None:
         self.ensure_initialized()
@@ -70,12 +63,11 @@ class CUDAManager(BaseManager):
             return
 
         device = self.get_device()
-        torch.cuda.set_device(device.index)
+        torch.cuda.set_device(device.index) # type: ignore
 
-        torch.cuda.reset_peak_memory_stats()
-        torch.cuda.reset_max_memory_allocated()
-        self._local.memory_allocated = 0.0
-        self._local.memory_cached = 0.0
+        # These calls should happen *after* initialization and setting the device.
+        torch.cuda.reset_peak_memory_stats() # type: ignore
+        torch.cuda.reset_max_memory_allocated() # type: ignore
 
         logger.info(f"CUDA setup complete on {device}")
 
@@ -88,72 +80,27 @@ class CUDAManager(BaseManager):
             allocated_gb = allocated / 1024**3
             cached_gb = cached / 1024**3
 
-            allocated_diff = allocated_gb - self._local.memory_allocated
-            cached_diff = cached_gb - self._local.memory_cached
-
             logger.info(
-                f"CUDA Memory: {allocated_gb:.2f}GB allocated ({allocated_diff:+.2f}GB), "
-                f"{cached_gb:.2f}GB cached ({cached_diff:+.2f}GB)"
+                f"CUDA Memory: {allocated_gb:.2f}GB allocated, "
+                f"{cached_gb:.2f}GB cached"
             )
 
-            self._local.memory_allocated = allocated_gb
-            self._local.memory_cached = cached_gb
-
-    def is_initialized(self) -> bool:
-        return (
-            super().is_initialized() and
-            hasattr(self._local, 'settings_initialized') and
-            self._local.settings_initialized
-        )
     def cleanup(self) -> None:
         """Clean up CUDA memory and resources."""
         self.ensure_initialized()
         try:
             if self.is_available():
+                # Clear CUDA memory
                 torch.cuda.empty_cache()
                 gc.collect()
-                torch.cuda.reset_peak_memory_stats()
-                torch.cuda.reset_max_memory_allocated()
-
-                if hasattr(self._local, 'models'):
-                    self._local.models.clear()
-
-                self._local.memory_allocated = 0.0
-                self._local.memory_cached = 0.0
-
-                logger.info("CUDA resources cleaned up")
-
-            if hasattr(self._local, 'settings_initialized'):
-                delattr(self._local, 'settings_initialized')
+                torch.cuda.reset_peak_memory_stats() # type: ignore
+                torch.cuda.reset_max_memory_allocated() # type: ignore
 
         except Exception as e:
             logger.error(f"Error during CUDA cleanup: {str(e)}")
             logger.error(traceback.format_exc())
             raise
 
-    def register_model(self, model: torch.nn.Module) -> None:
-        """Register model for CUDA memory tracking."""
-        self.ensure_initialized()
-        self._local.models.add(model)
-        logger.debug(f"Registered model {id(model)} for CUDA tracking")
-
-    def unregister_model(self, model: torch.nn.Module) -> None:
-        """Unregister model from CUDA memory tracking."""
-        self.ensure_initialized()
-        self._local.models.discard(model)
-        logger.debug(f"Unregistered model {id(model)} from CUDA tracking")
-
-    def verify_cuda_state(self) -> None:
-        """Verify CUDA memory state is clean."""
-        self.ensure_initialized()
-        if self.is_available():
-            self.log_memory_stats()
-            allocated = torch.cuda.memory_allocated()
-            if allocated > 0:
-                logger.warning(
-                    f"CUDA memory not clean: {allocated / 1024**3:.2f}GB allocated. "
-                    "This may indicate a memory leak from previous operations."
-                )
     @contextmanager
     def track_memory(self, tag: str = '') -> None:
         """Context manager to track memory usage."""
@@ -163,7 +110,7 @@ class CUDAManager(BaseManager):
             try:
                 yield
             finally:
-                peak = torch.cuda.max_memory_allocated() / 1024**3
+                peak = torch.cuda.max_memory_allocated() / 1024**3 # type: ignore
                 logger.info(f"Peak memory usage{f' [{tag}]' if tag else ''}: {peak:.2f}GB")
 
 __all__ = ['CUDAManager']
