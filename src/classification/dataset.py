@@ -1,10 +1,11 @@
+# dataset.py
 # src/classification/dataset.py
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 from transformers import PreTrainedTokenizerFast
-
+# Ensure correct relative import based on your project structure
 from src.data.csv_dataset import CSVDataset  # Corrected import
 
 logger = logging.getLogger(__name__)

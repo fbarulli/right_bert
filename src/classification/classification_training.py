@@ -1,3 +1,4 @@
+# classification_training.py
 # src/classification/classification_training.py
 from __future__ import annotations
 
@@ -22,7 +23,6 @@ from src.common.managers import (
     get_directory_manager,
     get_optuna_manager,
     get_shared_tokenizer,
-    get_wandb_manager
 )
 
 from src.common.utils import seed_everything, create_optimizer, create_scheduler
@@ -65,7 +65,9 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
             trial_config = parameter_manager.get_trial_config(trial)
             trial_config['model']['name'] = embedding_model_path
             if trial_config["training"]["num_trials"] > 1:
+                from src.common.managers import get_wandb_manager
                 wandb_manager = get_wandb_manager()
+                
                 wandb_manager.init_trial(trial.number)
             data_manager = get_data_manager()
             tokenizer_manager = get_tokenizer_manager()
@@ -155,6 +157,9 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
             raise optuna.TrialPruned(f"Trial failed: {str(e)}")
         finally:
             if config["training"]["num_trials"] > 1:
+                from src.common.managers import get_wandb_manager
+                wandb_manager = get_wandb_manager()
+                
                 wandb_manager.finish_trial(trial.number)
             if torch.cuda.is_available():
                 for var_name, var in local_vars.items():
@@ -182,6 +187,7 @@ def train_final_model(embedding_model_path: str, best_params: Dict[str, Any], co
     directory_manager = get_directory_manager()
     model_manager = get_model_manager()
     if config["training"]["num_trials"] > 1:
+        from src.common.managers import get_wandb_manager
         wandb_manager = get_wandb_manager()
     tokenizer = tokenizer_manager.get_worker_tokenizer(
             worker_id=0,

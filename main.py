@@ -1,4 +1,4 @@
-#main.py
+# main.py
 import logging
 import os
 import traceback
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 def train_model(wandb_manager = None) -> None:
     """Train the model using managers from the factory."""
     try:
+        from src.common.config_utils import load_yaml_config
         from src.common.managers import (
             get_factory,
             get_cuda_manager,
@@ -46,9 +47,6 @@ def train_model(wandb_manager = None) -> None:
             get_tokenizer_manager,
             get_directory_manager
         )
-        
-        factory = get_factory()
-        config = factory.config
         
         seed_everything(config['training']['seed'])
         output_dir = Path(config['output']['dir'])
@@ -107,11 +105,13 @@ def train_model(wandb_manager = None) -> None:
 
 def objective(trial):
     """Objective function for Optuna optimization."""
-    from src.common.managers import get_parameter_manager, get_wandb_manager, get_factory
+    from src.common.config_utils import load_yaml_config
+    from src.common.managers import get_factory
     
     # Get managers from factory
-    parameter_manager = get_parameter_manager()
-    wandb_manager = get_wandb_manager()
+    factory = get_factory()
+    parameter_manager = factory.get_parameter_manager()
+    wandb_manager = factory.get_wandb_manager()
     factory = get_factory()
     
     # Get trial configuration
@@ -164,7 +164,9 @@ def validate_config(config: Dict[str, Any]) -> bool:
 
 def main():
     try:
+        from src.common.config_utils import load_yaml_config
         logger.info(f"Main Process ID: {os.getpid()}")
+
         
         # Load and validate configuration
         logger.info("Loading configuration...")
@@ -179,6 +181,7 @@ def main():
         
         # Initialize manager factory
         from src.common.managers import initialize_factory
+        config = load_yaml_config("config/embedding_config.yaml")
         initialize_factory(config)
         
         # Setup logging after config is loaded and validated
@@ -209,7 +212,7 @@ def main():
         from src.common.managers import cleanup_managers
         from src.common.resource.resource_initializer import ResourceInitializer
         logger.info("Cleaning up resources...")
-        cleanup_managers()
+        #cleanup_managers() #removed
         ResourceInitializer.cleanup_process()
 
 if __name__ == "__main__":

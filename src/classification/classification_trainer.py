@@ -1,3 +1,4 @@
+# classification_trainer.py
 # src/classification/classification_trainer.py
 from __future__ import annotations
 
@@ -45,7 +46,7 @@ class ClassificationTrainer(BaseTrainer):
         )
         self.best_accuracy = 0.0
         self._optimizer = self.create_optimizer()  # Corrected: create optimizer here
-
+        
     def compute_metrics(
         self,
         outputs: Dict[str, torch.Tensor],

@@ -1,3 +1,4 @@
+# losses.py
 # src/classification/losses.py
 from __future__ import annotations
 
@@ -5,7 +6,6 @@ import logging
 import torch
 import torch.nn as nn
 from typing import Dict, Any, Optional
-from src.common.managers import get_metrics_manager
 
 logger = logging.getLogger(__name__)
 
