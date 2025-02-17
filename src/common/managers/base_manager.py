@@ -1,10 +1,9 @@
-# src/common/managers/base_manager.py
+# src/common/managers/base_manager.py (CORRECTED)
 import threading
 import logging
 import os
 import weakref
 from typing import Dict, Type, ClassVar, Any, Optional
-
 
 logger = logging.getLogger(__name__)
 
@@ -14,35 +13,41 @@ def init_manager_class(cls):
     cls._storage_registry: ClassVar[Dict[Type['BaseManager'], threading.local]] = {}
     return cls
 
-
-@init_manager_class  # Apply the decorator
+@init_manager_class
 class BaseManager:
     """Base class for process-local managers with isolated storage."""
 
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls not in cls._instances:
             instance = super().__new__(cls)
             cls._instances[cls] = instance
-            # Note: storage_registry is already initialized by the decorator
+            cls._storage_registry[cls] = threading.local()  # Initialize storage here!
         return cls._instances[cls]
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        # Don't re-initialize if it's already initialized for this process
+        if not self.is_initialized():
+            self._initialize_process_local(config)  # Call only if not initialized
 
     @property
     def _local(self) -> threading.local:
-        return self.__class__._storage_registry[self.__class__]
+      if self.__class__ not in self.__class__._storage_registry:
+          self.__class__._storage_registry[self.__class__] = threading.local()  # type: ignore
+      return self.__class__._storage_registry[self.__class__]  # type: ignore
 
     def ensure_initialized(self, config: Optional[Dict[str, Any]] = None) -> None:
         current_pid = os.getpid()
         if not hasattr(self._local, 'initialized') or self._local.pid != current_pid:
             logger.debug(f"Initializing {self.__class__.__name__} for process {current_pid}")
             self._local.pid = current_pid
-            self._local.initialized = False  # Initialize to False
+            self._local.initialized = False
             try:
-                self._initialize_process_local(config)
+                # Do NOT call _initialize_process_local here.  It's handled in __init__.
                 self._local.initialized = True  # Only set to True on success
                 logger.info(f"{self.__class__.__name__} initialized for process {current_pid}")
             except Exception as e:
                 logger.error(f"Failed to initialize {self.__class__.__name__}: {str(e)}")
-                if hasattr(self._local, 'initialized'):  # Prevent AttributeError
+                if hasattr(self._local, 'initialized'):
                     delattr(self._local, 'initialized')
                 raise
 
