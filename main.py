@@ -7,7 +7,8 @@ from typing import Dict, Any
 
 import optuna
 
-from src.common.utils import setup_logging, seed_everything, load_yaml_config
+from src.common.utils import setup_logging, seed_everything
+from src.common.config_utils import load_yaml_config
 from src.common import (
     get_data_manager,
     get_model_manager,
@@ -113,19 +114,23 @@ def main():
 
     try:
         logger.info(f"Main Process ID: {os.getpid()}")
-        setup_logging(config = load_yaml_config("config/embedding_config.yaml"))
+        
+        # Load configuration first
         logger.info("Loading configuration...")
-
         config = load_yaml_config("config/embedding_config.yaml")
         if not config:
             logger.error("Failed to load configuration. Exiting.")
             return
-        _config = config
-
+        _config = config  # Set global config before any manager initialization
+        
+        # Setup logging after config is loaded
+        setup_logging(config=config)
+        
         logger.info("Configuration loaded successfully")
         logger.info("\n=== Starting Training ===")
+        
         if config['training']['num_trials'] > 1:
-            optuna_manager = get_optuna_manager()
+            optuna_manager = get_optuna_manager()  # Now _config is available
             study = optuna_manager.study
             logger.info("Launching Optuna Study")
             study.optimize(objective, n_trials=config["training"]["num_trials"], n_jobs=config["training"]["n_jobs"])

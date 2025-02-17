@@ -13,8 +13,8 @@ PARAMETER_TYPES = {
         'max_length': int,
         'embedding_mask_probability': float,
         'max_predictions': int,
-        'num_workers': int, # Corrected: num_workers back in data section - needed for dataset
-        'max_span_length': int, 
+        'num_workers': int,
+        'max_span_length': int
     },
     'training': {
         'batch_size': int,
@@ -26,21 +26,29 @@ PARAMETER_TYPES = {
         'learning_rate': float,
         'weight_decay': float,
         'fp16': bool,
-        "optimizer_type": str,
-        "save_every_n_epochs": int,
+        'optimizer_type': str,
+        'save_every_n_epochs': int,
         'early_stopping_patience': int,
         'early_stopping_min_delta': float,
-        "max_grad_norm": float,
-        'hidden_dropout_prob': float, #Corrected: Moved back to training section - but also needed in model
-        'attention_probs_dropout_prob': float #Corrected: Moved back to training section - but also needed in model
-        #'num_workers': int #Corrected: Removed num_workers from training section - only in data
+        'max_grad_norm': float,
+        'hidden_dropout_prob': float,
+        'attention_probs_dropout_prob': float,
+        'gradient_accumulation_steps': int,
+        'logging_steps': int,
+        'eval_steps': int,
+        'save_top_k': int,
+        'log_every_n_steps': int,
+        'debug_logging': bool,
+        'study_name': str,
+        'warmup_ratio': float
     },
     'model': {
         'name': str,
         'type': str,
-        "stage":str,
-        #'hidden_dropout_prob': float, #Model dropout # Corrected: moved to model section
-        #'attention_probs_dropout_prob': float # Attention dropout # Corrected: moved to model section
+        'stage': str,
+        'tie_weights': bool,
+        'hidden_dropout_prob': float,
+        'attention_probs_dropout_prob': float
     },
     'optimizer': {
         'learning_rate': float,
@@ -52,11 +60,26 @@ PARAMETER_TYPES = {
     },
     'output': {
         'dir': str,
-        "storage_dir": str,
-        "wandb": dict
+        'storage_dir': str,
+        'save_model': bool,
+        'save_optimizer': bool,
+        'save_scheduler': bool,
+        'wandb': {
+            'enabled': bool,
+            'project': str,
+            'api_key': str,
+            'tags': list
+        }
     },
-    'study_name': str,
-    'hyperparameters': dict,
+    'hyperparameters': {
+        'learning_rate': dict,
+        'weight_decay': dict,
+        'warmup_ratio': dict,
+        'embedding_mask_probability': dict,
+        'max_span_length': dict,
+        'hidden_dropout_prob': dict,
+        'attention_probs_dropout_prob': dict
+    },
     'resources': {
         'max_memory_gb': float,
         'gpu_memory_gb': float,
@@ -65,7 +88,12 @@ PARAMETER_TYPES = {
         'max_time_hours': float,
         'cache_cleanup_days': float
     },
-    'scheduler': dict
+    'scheduler': {
+        'type': str,
+        'warmup_ratio': float,
+        'min_lr_ratio': float,
+        'use_scheduler': bool
+    }
 }
 
 def _convert_value(value: Any, target_type: type) -> Any:
