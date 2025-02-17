@@ -200,6 +200,15 @@ def get_worker_init_fn(num_workers: int) -> Optional[callable]:
         return init_worker
     return None
 
+def get_cuda_manager():
+    from src.common.managers.cuda_manager import CUDAManager # Local import to avoid cycle
+    return CUDAManager() # _config is likely not needed here anymore
+
+def get_tensor_manager():
+    from src.common.managers.tensor_manager import TensorManager # Local import to avoid cycle
+    return TensorManager() # _config is likely not needed here anymore
+
+
 from .config_utils import load_yaml_config
 __all__ = [
     'setup_logging',
@@ -214,5 +223,7 @@ __all__ = [
     'chunk_file',
     'measure_memory',
     'init_worker',
-    'get_worker_init_fn'
+    'get_worker_init_fn',
+    'get_cuda_manager', # Add to __all__
+    'get_tensor_manager' # Add to __all__
 ]

@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, Union
 from torch.utils.data import DataLoader
 
 from src.common.managers.base_manager import BaseManager
-from src.common.managers import get_cuda_manager, get_tensor_manager
+from src.common.utils import get_cuda_manager, get_tensor_manager # Import from utils
 
 logger = logging.getLogger(__name__)
 
