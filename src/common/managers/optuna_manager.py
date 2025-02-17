@@ -1,4 +1,4 @@
-# src/common/managers/optuna_manager.py
+# src/common/managers/optuna_manager.py (CORRECTED)
 import logging
 import os
 import threading
@@ -11,7 +11,8 @@ import multiprocessing as mp
 
 from src.common.study.study_storage import StudyStorage
 from src.common.study.study_config import StudyConfig
-from src.common.process.worker_utils import run_worker
+# DELAYED IMPORTS
+# from src.common.process.worker_utils import run_worker
 from src.common.managers.base_manager import BaseManager
 
 logger = logging.getLogger(__name__)
@@ -19,21 +20,25 @@ logger = logging.getLogger(__name__)
 class OptunaManager(BaseManager):
     """Manages optimization process using Optuna."""
 
-    def __init__(
-        self,
-        study_name: str = None,
-        config: Dict[str, Any] = None,
-        storage_dir: Optional[Path] = None,
-    ):
-        super().__init__()
+    def __init__(self, study_name: str, config: Dict[str, Any], storage_dir: Optional[Path] = None):
+        """
+        Initialize the OptunaManager.
+
+        Args:
+            study_name: Name of the Optuna study.
+            config: Configuration dictionary.
+            storage_dir: Directory for Optuna storage.
+        """
+        # Assign attributes *before* calling super().__init__()
         self.study_name = study_name
         self.config = config
         self.storage_dir = storage_dir
-
+        self.study = None # Initialize to None
+        super().__init__(config) # Initialize base, calling _initialize
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         super()._initialize_process_local(config)
-        if not self.study_name or not self.config:
+        if not self.study_name or not self.config:  # Now safe to access
             raise ValueError("OptunaManager requires study_name and config to be set.")
 
         self.study_config = StudyConfig(self.config)
@@ -56,9 +61,9 @@ class OptunaManager(BaseManager):
                 load_if_exists=True
             )
             logger.info("Study created/loaded successfully")
-            logger.info(f"Study ID: {self.study._study_id}")
-            logger.info(f"Study direction: {self.study.direction}")
-            logger.info(f"Study system attrs: {self.study.system_attrs}")
+            logger.info(f"Study ID: {self.study._study_id}") # type: ignore
+            logger.info(f"Study direction: {self.study.direction}") # type: ignore
+            logger.info(f"Study system attrs: {self.study.system_attrs}") # type: ignore
         except Exception as e:
             logger.error(f"Failed to create/load study: {str(e)}")
             logger.error(f"Traceback:\n{traceback.format_exc()}")
@@ -73,26 +78,27 @@ class OptunaManager(BaseManager):
 
     def _log_study_state(self) -> None:
         """Log current state of the study."""
-        n_trials = len(self.study.trials)
-        completed_trials = len([t for t in self.study.trials if t.state == TrialState.COMPLETE])
-        failed_trials = len([t for t in self.study.trials if t.state == TrialState.FAIL])
-        pruned_trials = len([t for t in self.study.trials if t.state == TrialState.PRUNED])
+        if self.study is not None:
+            n_trials = len(self.study.trials)
+            completed_trials = len([t for t in self.study.trials if t.state == TrialState.COMPLETE])
+            failed_trials = len([t for t in self.study.trials if t.state == TrialState.FAIL])
+            pruned_trials = len([t for t in self.study.trials if t.state == TrialState.PRUNED])
 
-        logger.info("\n=== Study State ===")
-        logger.info(f"Total trials: {n_trials}")
-        logger.info(f"- Completed: {completed_trials}")
-        logger.info(f"- Failed: {failed_trials}")
-        logger.info(f"- Pruned: {pruned_trials}")
+            logger.info("\n=== Study State ===")
+            logger.info(f"Total trials: {n_trials}")
+            logger.info(f"- Completed: {completed_trials}")
+            logger.info(f"- Failed: {failed_trials}")
+            logger.info(f"- Pruned: {pruned_trials}")
 
-        if completed_trials > 0:
-            best_trial = self.study.best_trial
-            logger.info("\n=== Best Trial ===")
-            logger.info(f"Number: {best_trial.number}")
-            logger.info(f"Value: {best_trial.value:.4f}")
-            logger.info(f"Duration: {best_trial.duration.total_seconds():.2f} seconds")
-            logger.info("Parameters:")
-            for k, v in best_trial.params.items():
-                logger.info(f"- {k}: {v}")
+            if completed_trials > 0:
+                best_trial = self.study.best_trial
+                logger.info("\n=== Best Trial ===")
+                logger.info(f"Number: {best_trial.number}")
+                logger.info(f"Value: {best_trial.value:.4f}")
+                logger.info(f"Duration: {best_trial.duration.total_seconds():.2f} seconds") # type: ignore
+                logger.info("Parameters:")
+                for k, v in best_trial.params.items():
+                    logger.info(f"- {k}: {v}")
 
     def _start_workers(self, n_jobs: int) -> None:
         """Start worker processes."""
@@ -100,7 +106,7 @@ class OptunaManager(BaseManager):
 
         for worker_id in range(n_jobs):
             logger.info(f"\nPreparing worker {worker_id}")
-
+            from src.common.process.worker_utils import run_worker #DELAYED
             args = (
                 worker_id,
                 self.study_name,
@@ -190,7 +196,7 @@ class OptunaManager(BaseManager):
             for trial_num in range(n_trials):
                 logger.info(f"\n=== Creating Trial {trial_num} ===")
                 try:
-                    trial = self.study.ask()
+                    trial = self.study.ask()  # type: ignore
                     trial_config = self.study_config.suggest_parameters(trial)
                     logger.info(f"Trial created successfully:")
                     logger.info(f"- Number: {trial.number}")
@@ -240,20 +246,20 @@ class OptunaManager(BaseManager):
                 if error:
                     logger.error(f"Trial {trial_num} failed: {error}")
                     logger.info("Setting trial state to FAIL")
-                    self.study.tell(trial_num, state=optuna.trial.TrialState.FAIL)
+                    self.study.tell(trial_num, state=optuna.trial.TrialState.FAIL) # type: ignore
                 else:
                     logger.info(f"Trial {trial_num} completed with value: {result}")
                     logger.info("Telling study about trial result")
-                    self.study.tell(trial_num, result)
+                    self.study.tell(trial_num, result) # type: ignore
                     logger.info("Study updated successfully")
 
                 completed_trials += 1
                 logger.info(f"Completed {completed_trials}/{n_trials} trials")
 
-            self.storage.save_trial_history(self.study.trials)
+            self.storage.save_trial_history(self.study.trials) # type: ignore
 
-            if any(t.state == TrialState.COMPLETE for t in self.study.trials):
-                return self.study.best_trial
+            if any(t.state == TrialState.COMPLETE for t in self.study.trials): # type: ignore
+                return self.study.best_trial # type: ignore
             else:
                 logger.warning("No trials completed successfully.")
                 return None
