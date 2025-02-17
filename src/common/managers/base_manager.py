@@ -52,7 +52,19 @@ class BaseManager:
                 raise
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        pass  # Implementation in subclasses
+        """Initialize process-local storage with configuration."""
+        if not hasattr(self._local, 'config'):
+            self._local.config = {}
+        
+        if config is not None:
+            self._local.config.update(config)
+            
+        self._validate_config(self._local.config)
+    
+    def _validate_config(self, config: Dict[str, Any]) -> None:
+        """Validate configuration. Override in subclasses for specific validation."""
+        if not config:
+            raise ValueError("Configuration cannot be empty")
 
     def is_initialized(self) -> bool:
         return (

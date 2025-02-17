@@ -239,39 +239,14 @@ def get_worker_init_fn(num_workers: int) -> Optional[callable]:
         return init_worker
     return None
 
-def load_yaml_config(filepath: str) -> Dict[str, Any]:
-    """
-    Loads a YAML configuration file.
-
-    Args:
-        filepath: The path to the YAML configuration file.
-
-    Returns:
-        A dictionary representing the YAML configuration. Returns an empty
-        dictionary if any error occurs during loading.
-    """
-    try:
-        with open(filepath, 'r') as f:
-            config = yaml.safe_load(f)
-            if config is None:
-                logging.warning(f"YAML file at {filepath} is empty.")
-                return {}
-            return config
-    except FileNotFoundError:
-        logging.error(f"YAML file not found: {filepath}")
-        return {}
-    except yaml.YAMLError as e:
-        logging.error(f"Error parsing YAML file {filepath}: {e}")
-        return {}
-    except Exception as e:
-        logging.error(f"An unexpected error occurred while loading YAML: {filepath}: {e}")
-        return {}
+# Import the properly validated version from config_utils
+from .config_utils import load_yaml_config
 __all__ = [
     'setup_logging',
     'seed_everything',
     'get_memory_usage',
     'clear_memory',
-    'load_yaml_config',
+    'load_yaml_config',  # Re-exported from config_utils
     'parallel_map',
     'batch_iterator',
     'create_memmap_array',

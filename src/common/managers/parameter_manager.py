@@ -109,16 +109,34 @@ class ParameterManager(BaseManager):
             'resources': [
                 'max_memory_gb', 'garbage_collection_threshold',
                 'max_split_size_mb', 'max_time_hours', 'cache_cleanup_days'
+            ],
+            'output': [
+                'dir', 'storage_dir', 'save_model', 'save_optimizer', 
+                'save_scheduler', 'wandb'
             ]
         }
+        
+        # Additional validation for wandb configuration
+        wandb_required_params = ['enabled', 'project', 'api_key', 'tags']
         
         config_to_validate = config if config is not None else self.base_config
         
         missing_params = []
         for section, params in required_params.items():
+            if section not in config_to_validate:
+                missing_params.append(f"section '{section}'")
+                continue
+                
             for param in params:
                 if param not in config_to_validate[section]:
                     missing_params.append(f"{section}.{param}")
+                    
+                # Validate wandb configuration if it exists
+                if section == 'output' and param == 'wandb':
+                    wandb_config = config_to_validate[section]['wandb']
+                    for wandb_param in wandb_required_params:
+                        if wandb_param not in wandb_config:
+                            missing_params.append(f"output.wandb.{wandb_param}")
         
         if missing_params:
             raise ValueError(f"Missing required parameters: {', '.join(missing_params)}")

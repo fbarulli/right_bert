@@ -109,6 +109,40 @@ def objective(trial):
     best_val_loss = trial.user_attrs.get('best_val_loss', float('inf'))
     return best_val_loss
 
+def validate_config(config: Dict[str, Any]) -> bool:
+    """Validate the configuration before starting training."""
+    try:
+        # Check required top-level sections
+        required_sections = {'training', 'data', 'model', 'output', 'resources'}
+        missing_sections = required_sections - set(config.keys())
+        if missing_sections:
+            logger.error(f"Missing required configuration sections: {missing_sections}")
+            return False
+
+        # Validate output section specifically
+        output_config = config.get('output', {})
+        required_output_fields = {'dir', 'storage_dir', 'wandb'}
+        missing_output_fields = required_output_fields - set(output_config.keys())
+        if missing_output_fields:
+            logger.error(f"Missing required output configuration fields: {missing_output_fields}")
+            return False
+
+        # Create output directories
+        output_dir = Path(output_config['dir'])
+        storage_dir = output_dir / output_config['storage_dir']
+        output_dir.mkdir(parents=True, exist_ok=True)
+        storage_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info("Configuration validation successful")
+        logger.info(f"Output directory: {output_dir}")
+        logger.info(f"Storage directory: {storage_dir}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
+        return False
+
 def main():
     global _config
 
@@ -121,16 +155,23 @@ def main():
         if not config:
             logger.error("Failed to load configuration. Exiting.")
             return
-        _config = config  # Set global config before any manager initialization
+
+        # Validate configuration before proceeding
+        if not validate_config(config):
+            logger.error("Configuration validation failed. Exiting.")
+            return
+
+        # Set global config after validation
+        _config = config
         
-        # Setup logging after config is loaded
+        # Setup logging after config is loaded and validated
         setup_logging(config=config)
         
-        logger.info("Configuration loaded successfully")
+        logger.info("Configuration loaded and validated successfully")
         logger.info("\n=== Starting Training ===")
         
         if config['training']['num_trials'] > 1:
-            optuna_manager = get_optuna_manager()  # Now _config is available
+            optuna_manager = get_optuna_manager()
             study = optuna_manager.study
             logger.info("Launching Optuna Study")
             study.optimize(objective, n_trials=config["training"]["num_trials"], n_jobs=config["training"]["n_jobs"])
