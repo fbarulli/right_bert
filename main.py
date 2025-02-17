@@ -1,4 +1,4 @@
-# main.py (CORRECTED)
+# main.py (FINAL CORRECTED)
 import logging
 import os
 import traceback
@@ -20,7 +20,7 @@ from src.common import (
     get_shared_tokenizer,
     set_shared_tokenizer
 )
-from src.embedding.models import embedding_model_factory  # Corrected import
+from src.embedding.model import embedding_model_factory  # Corrected import
 from src.embedding.embedding_training import train_embeddings
 
 

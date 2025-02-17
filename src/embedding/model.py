@@ -1,4 +1,4 @@
-# src/embedding/model.py (CORRECTED)
+# src/embedding/model.py (CONFIRM ABSOLUTE IMPORTS)
 from __future__ import annotations
 import logging
 import torch
