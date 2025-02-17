@@ -81,7 +81,7 @@ hyperparameters:
 # Resource limits
 resources:
   max_memory_gb: 22.5  # DO NOT CHANGE
-  gpu_memory_gb: 10.0  # Maximum GPU memory usage
+  gpu_memory_gb: 22.5  # Maximum GPU memory usage
   garbage_collection_threshold: 0.7
   max_split_size_mb: 2048
   max_time_hours: 24
