@@ -1,23 +1,30 @@
 # src/common/managers/base_manager.py
-from __future__ import annotations
 import threading
 import logging
 import os
 import weakref
 from typing import Dict, Type, ClassVar, Any, Optional
+from .base_manager import BaseManager  # CORRECTED: Relative import
+
 
 logger = logging.getLogger(__name__)
 
+def init_manager_class(cls):
+    """Class decorator to initialize class-level variables."""
+    cls._instances: ClassVar[Dict[Type['BaseManager'], 'BaseManager']] = weakref.WeakValueDictionary()
+    cls._storage_registry: ClassVar[Dict[Type['BaseManager'], threading.local]] = {}
+    return cls
+
+
+@init_manager_class  # Apply the decorator
 class BaseManager:
     """Base class for process-local managers with isolated storage."""
-    _instances: ClassVar[Dict[Type['BaseManager'], 'BaseManager']] = weakref.WeakValueDictionary()
-    _storage_registry: ClassVar[Dict[Type['BaseManager'], threading.local]] = {}
 
     def __new__(cls):
         if cls not in cls._instances:
             instance = super().__new__(cls)
             cls._instances[cls] = instance
-            cls._storage_registry[cls] = threading.local()
+            # Note: storage_registry is already initialized by the decorator
         return cls._instances[cls]
 
     @property
@@ -29,20 +36,19 @@ class BaseManager:
         if not hasattr(self._local, 'initialized') or self._local.pid != current_pid:
             logger.debug(f"Initializing {self.__class__.__name__} for process {current_pid}")
             self._local.pid = current_pid
-            self._local.initialized = False
+            self._local.initialized = False  # Initialize to False
             try:
                 self._initialize_process_local(config)
-                self._local.initialized = True
+                self._local.initialized = True  # Only set to True on success
                 logger.info(f"{self.__class__.__name__} initialized for process {current_pid}")
             except Exception as e:
                 logger.error(f"Failed to initialize {self.__class__.__name__}: {str(e)}")
-                if hasattr(self._local, 'initialized'):
+                if hasattr(self._local, 'initialized'):  # Prevent AttributeError
                     delattr(self._local, 'initialized')
                 raise
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """Initialize process-local attributes. Override in subclasses."""
-        pass
+        pass  # Implementation in subclasses
 
     def is_initialized(self) -> bool:
         return (
@@ -52,14 +58,12 @@ class BaseManager:
         )
 
     def get_config_section(self, config: Dict[str, Any], section: str) -> Dict[str, Any]:
-        """Get a section from the config with safe defaults."""
         if config is None:
             return {}
         return config.get(section, {})
 
     @classmethod
     def cleanup_all(cls) -> None:
-        """Clean up all manager instances."""
         for manager_cls, storage in cls._storage_registry.items():
             try:
                 if hasattr(storage, 'initialized'):

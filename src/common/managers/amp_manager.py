@@ -5,8 +5,9 @@ import logging
 import traceback
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
+from .base_manager import BaseManager  # CORRECTED: Relative import
 
-from src.common.managers.base_manager import BaseManager # Corrected import
+
 
 logger = logging.getLogger(__name__)
 

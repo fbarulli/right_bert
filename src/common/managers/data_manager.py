@@ -12,15 +12,15 @@ from typing import Dict, Any, Tuple, Optional
 from transformers import PreTrainedTokenizerFast
 from torch.utils.data.dataloader import default_collate
 import threading
-from src.common.managers import (  # Corrected import
+from src.common.managers import (  
     get_dataloader_manager,
     get_tokenizer_manager
 )
 from src.common.resource.resource_initializer import ResourceInitializer
 
-from src.embedding.dataset import EmbeddingDataset  # Corrected import
-from src.data.csv_dataset import CSVDataset  # Corrected import
-
+from src.embedding.dataset import EmbeddingDataset  
+from src.data.csv_dataset import CSVDataset  
+from .base_manager import BaseManager  
 logger = logging.getLogger(__name__)
 
 class DataManager(BaseManager):

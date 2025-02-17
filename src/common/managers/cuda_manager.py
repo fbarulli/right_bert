@@ -8,6 +8,7 @@ import weakref
 import traceback
 from typing import Dict, Any, Optional
 from contextlib import contextmanager
+from .base_manager import BaseManager
 
 
 logger = logging.getLogger(__name__)

@@ -13,8 +13,7 @@ import multiprocessing as mp
 from src.common.study.study_storage import StudyStorage
 from src.common.study.study_config import StudyConfig
 from src.common.process.worker_utils import run_worker
-from src.common.managers.base_manager import BaseManager
-
+from .base_manager import BaseManager
 logger = logging.getLogger(__name__)
 
 class OptunaManager(BaseManager):

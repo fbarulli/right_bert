@@ -6,8 +6,7 @@ import copy
 import optuna
 from optuna.trial import FixedTrial
 
-from src.common.managers.base_manager import BaseManager  # Corrected import
-
+from .base_manager import BaseManager
 logger = logging.getLogger(__name__)
 
 class ParameterManager(BaseManager):

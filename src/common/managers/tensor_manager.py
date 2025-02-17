@@ -6,13 +6,12 @@ import traceback
 from typing import Optional, Union, List, Tuple, Dict, Any
 import numpy as np
 
-from src.common.managers.base_manager import BaseManager
 from src.common.managers import get_cuda_manager  # Corrected import: Use getter
 from src.common.cuda_utils import (
     is_cuda_available,
     clear_cuda_memory
 )
-
+from .base_manager import BaseManager
 logger = logging.getLogger(__name__)
 
 class TensorManager(BaseManager):

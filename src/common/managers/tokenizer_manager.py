@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 from transformers import PreTrainedTokenizerFast, AutoTokenizer
 from transformers.utils import logging as transformers_logging
 
-from src.common.managers.base_manager import BaseManager
+from .base_manager import BaseManager
 from src.common import get_shared_tokenizer, set_shared_tokenizer  # Import
 
 logger = logging.getLogger(__name__)

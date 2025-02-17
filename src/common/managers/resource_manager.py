@@ -12,8 +12,8 @@ from torch.utils.data import Dataset, DataLoader
 
 from src.common.resource.resource_initializer import ResourceInitializer
 from src.common.managers import get_cuda_manager
-from src.common.managers.base_manager import BaseManager
 from src.common.resource import resource_factory
+from .base_manager import BaseManager
 
 cuda_manager = get_cuda_manager()
 

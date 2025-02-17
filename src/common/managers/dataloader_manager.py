@@ -9,10 +9,10 @@ from typing import Any, Optional, Dict, Callable
 from torch.utils.data import Dataset, DataLoader
 
 from src.common.managers.base_manager import BaseManager
-from src.common.managers import get_cuda_manager  # Corrected import
+from src.common.managers import get_cuda_manager  
 from src.common.resource.resource_initializer import ResourceInitializer
 from src.common.process.initialization import get_worker_init_fn
-
+from .base_manager import BaseManager  
 logger = logging.getLogger(__name__)
 
 class DataLoaderManager(BaseManager):

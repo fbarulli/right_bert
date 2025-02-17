@@ -10,8 +10,7 @@ from typing import Dict, Any, Optional
 import optuna
 from optuna.samplers import TPESampler
 
-from src.common.managers.base_manager import BaseManager
-
+from .base_manager import BaseManager
 logger = logging.getLogger(__name__)
 
 class StorageManager(BaseManager):

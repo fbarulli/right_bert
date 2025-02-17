@@ -6,7 +6,7 @@ import traceback
 from typing import Dict, Any, Optional, Union
 from torch.utils.data import DataLoader
 
-from src.common.managers.base_manager import BaseManager
+from .base_manager import BaseManager  # CORRECTED: Relative import
 
 logger = logging.getLogger(__name__)
 

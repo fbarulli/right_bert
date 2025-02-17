@@ -7,8 +7,8 @@ import torch.nn as nn
 from typing import Dict, Any, Optional, List
 import math
 
-from src.common.managers.base_manager import BaseManager
 from src.common.managers import get_cuda_manager
+from .base_manager import BaseManager
 
 logger = logging.getLogger(__name__)
 

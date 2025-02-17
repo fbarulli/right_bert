@@ -15,8 +15,7 @@ from optuna.trial import Trial
 import torch
 
 from src.common.managers import get_cuda_manager  # Corrected import
-from src.common.managers.base_manager import BaseManager
-
+from .base_manager import BaseManager
 cuda_manager = get_cuda_manager()
 from src.common.study.objective_factory import ObjectiveFactory
 from src.common.managers import (  # Corrected imports

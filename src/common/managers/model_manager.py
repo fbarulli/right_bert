@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 from transformers import PreTrainedModel, BertConfig
 from transformers.utils import logging as transformers_logging
 from transformers.utils.hub import HFValidationError
-from src.common.managers import get_cuda_manager # Corrected import
+from src.common.managers import get_cuda_manager 
 
 # Get manager instance
 cuda_manager = get_cuda_manager()
@@ -15,19 +15,18 @@ import gc
 import weakref
 import threading
 
-from src.common.managers.base_manager import BaseManager  # Corrected import
-
+from .base_manager import BaseManager
 
 logger = logging.getLogger(__name__)
 
 def get_embedding_model():
     """Get EmbeddingBert model at runtime to avoid circular imports."""
-    from src.embedding.models import EmbeddingBert  # Corrected import
+    from src.embedding.models import EmbeddingBert  
     return EmbeddingBert
 
 def get_classification_model():
     """Get ClassificationBert model at runtime to avoid circular imports."""
-    from src.classification.models import ClassificationBert  # Corrected import
+    from src.classification.models import ClassificationBert  
     return ClassificationBert
 
 class ModelManager(BaseManager):
