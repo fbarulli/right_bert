@@ -1,4 +1,4 @@
-#src/common/resource/resource_initializer.py
+# src/common/resource/resource_initializer.py (CORRECTED)
 from __future__ import annotations
 import logging
 from typing import Dict, Any, Optional
@@ -37,32 +37,29 @@ class ResourceInitializer:
 
         # Initialize CUDA *first*
         cuda_manager = get_cuda_manager()
-        cuda_manager.ensure_initialized(cls._config) # type: ignore
+        cuda_manager.ensure_initialized(cls._config)
 
         # Now initialize other managers
         amp_manager = get_amp_manager()
-        amp_manager.ensure_initialized(cls._config) # type: ignore
+        amp_manager.ensure_initialized(cls._config)
         data_manager = get_data_manager()
-        data_manager.ensure_initialized(cls._config) # type: ignore
+        data_manager.ensure_initialized(cls._config)
         dataloader_manager = get_dataloader_manager()
-        dataloader_manager.ensure_initialized(cls._config) # type: ignore
+        dataloader_manager.ensure_initialized(cls._config)
         tensor_manager = get_tensor_manager()
-        tensor_manager.ensure_initialized(cls._config) # type: ignore
+        tensor_manager.ensure_initialized(cls._config)
         tokenizer_manager = get_tokenizer_manager()
-        tokenizer_manager.ensure_initialized(cls._config) # type: ignore
+        tokenizer_manager.ensure_initialized(cls._config)
         model_manager = get_model_manager()
-        model_manager.ensure_initialized(cls._config) # type: ignore
+        model_manager.ensure_initialized(cls._config)
         metrics_manager = get_metrics_manager()
-        metrics_manager.ensure_initialized(cls._config) # type: ignore
-
+        metrics_manager.ensure_initialized(cls._config)
         parameter_manager = get_parameter_manager()
-        parameter_manager.ensure_initialized(cls._config) # type: ignore
-
+        parameter_manager.ensure_initialized(cls._config)
         directory_manager = get_directory_manager()
-        directory_manager.ensure_initialized(cls._config) # type: ignore
+        directory_manager.ensure_initialized(cls._config)
         storage_manager = get_storage_manager()
-        storage_manager.ensure_initialized(cls._config) # type: ignore
-
+        storage_manager.ensure_initialized(cls._config)
 
         logger.info("Process resources initialized.")
 
@@ -87,7 +84,7 @@ class ResourceInitializer:
 
         try:
             storage_manager = get_storage_manager()
-            storage_manager.cleanup_all()  # type: ignore
+            storage_manager.cleanup_all()
         except Exception as e:
             logger.warning(f"Error during storage manager cleanup: {e}")
 
@@ -104,6 +101,7 @@ class ResourceInitializer:
              logger.warning(f"Error during metrics manager cleanup: {e}")
         try:
             model_manager = get_model_manager()
+            model_manager.cleanup_all()
         except Exception as e:
              logger.warning(f"Error during model manager cleanup: {e}")
         try:
@@ -131,7 +129,7 @@ class ResourceInitializer:
 
         try:
             cuda_manager = get_cuda_manager()
-            cuda_manager.cleanup()  # type: ignore
+            cuda_manager.cleanup()
 
         except Exception as e:
             logger.warning(f"Error during CUDA manager cleanup: {e}")

@@ -1,4 +1,4 @@
-# src/common/managers/directory_manager.py
+# src/common/managers/directory_manager.py (CORRECTED)
 from __future__ import annotations
 
 import logging
@@ -15,16 +15,22 @@ logger = logging.getLogger(__name__)
 class DirectoryManager(BaseManager):
     """Manages directory structure for outputs and caching"""
 
-    def __init__(self, base_dir: Path):
-        super().__init__()
+    def __init__(self, base_dir: Path, config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize the DirectoryManager.
+
+        Args:
+            base_dir: Base directory for outputs and caching.
+            config: Configuration dictionary (optional).  Not used by DirectoryManager.
+        """
+        super().__init__(config)  # Initialize with config
         if base_dir is None:
             raise ValueError("base_dir cannot be None")
-        self.base_dir = Path(base_dir)  # Store base_dir
+        self.base_dir = Path(base_dir)   # Store base_dir
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""
-        if not hasattr(self, 'base_dir') or not isinstance(self.base_dir, Path):
-            raise ValueError("DirectoryManager must be initialized with a base_dir Path object.")
+        super()._initialize_process_local(config)
 
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = self.base_dir / 'cache'
@@ -93,6 +99,7 @@ class DirectoryManager(BaseManager):
 
         except Exception as e:
             logger.warning(f"Error cleaning mmap directory: {e}")
+
 
     def cleanup_all(self) -> None:
         """Clean up all temporary files."""

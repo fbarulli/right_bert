@@ -7,6 +7,7 @@ from transformers import PreTrainedModel, BertConfig
 from transformers.utils import logging as transformers_logging
 from transformers.utils.hub import HFValidationError
 import gc
+import weakref  # ADDED MISSING IMPORT
 
 from src.common.managers.base_manager import BaseManager
 # DELAYED IMPORTS

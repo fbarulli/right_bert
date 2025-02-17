@@ -45,7 +45,7 @@ def get_dataloader_manager():
 
 def get_directory_manager():
     from src.common.managers.directory_manager import DirectoryManager
-    manager =  DirectoryManager(Path(_config['output']['dir']), _config) # Pass config
+    manager =  DirectoryManager(Path(_config['output']['dir'])) # Pass config
     return manager
 
 

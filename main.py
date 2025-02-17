@@ -1,4 +1,4 @@
-# main.py (FINAL CORRECTED)
+#main.py
 import logging
 import os
 import traceback
@@ -112,7 +112,7 @@ def main():
             logger.info("Launching Optuna Study")
             study.optimize(objective, n_trials=config["training"]["num_trials"], n_jobs=config["training"]["n_jobs"])
         else:
-            train_model(config)
+            train_model(config) # Call train model directly
 
     except Exception as e:
         logger.error(f"Training failed: {str(e)}")
