@@ -1,3 +1,4 @@
+# logging_config.py
 # project_structure.py
 import os
 import logging

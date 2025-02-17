@@ -1,3 +1,4 @@
+# __init__.py
 #__init__.py
 from __future__ import annotations
 from pathlib import Path
@@ -10,6 +11,7 @@ def get_amp_manager():
     return AMPManager(_config)
 
 def get_batch_manager():
+    from src.common.managers import get_cuda_manager, get_tensor_manager
     from src.common.managers.batch_manager import BatchManager
     return BatchManager()
 

@@ -1,3 +1,4 @@
+# config_utils.py
 # src/common/config_utils.py
 from __future__ import annotations
 import logging
@@ -13,7 +14,6 @@ PARAMETER_TYPES = {
         'max_length': int,
         'embedding_mask_probability': float,
         'max_predictions': int,
-        'num_workers': int,
         'max_span_length': int
     },
     'training': {

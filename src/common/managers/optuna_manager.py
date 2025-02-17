@@ -1,3 +1,4 @@
+# src/common/managers/optuna_manager.py
 # src/common/managers/optuna_manager.py (FINAL CORRECTED)
 import logging
 import os
@@ -269,4 +270,3 @@ class OptunaManager(BaseManager):
             self._cleanup_workers()
             self.storage.log_database_status()
             logger.info("Optimization completed")
-__all__ = ['OptunaManager']

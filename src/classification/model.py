@@ -1,3 +1,4 @@
+# model.py
 # src/classification/model.py
 from __future__ import annotations
 
@@ -13,7 +14,6 @@ from src.common.managers import (
     get_batch_manager,
     get_tensor_manager
 )
-
 logger = logging.getLogger(__name__)
 
 class ClassificationBert(BertPreTrainedModel):
@@ -80,9 +80,9 @@ class ClassificationBert(BertPreTrainedModel):
         return_dict: bool = True
     ) -> Union[Tuple, Dict[str, torch.Tensor]]:
 
-        cuda_manager = get_cuda_manager()
-        device = cuda_manager.get_device()
         batch_manager = get_batch_manager()
+        cuda_manager = get_cuda_manager()
+        cuda_manager = get_cuda_manager()
         inputs = {
             'input_ids': input_ids,
             'attention_mask': attention_mask
@@ -94,7 +94,7 @@ class ClassificationBert(BertPreTrainedModel):
         if labels is not None:
             inputs['labels'] = labels
 
-        inputs = batch_manager.prepare_batch(inputs, device)
+        inputs = batch_manager.prepare_batch(inputs, cuda_manager.get_device())
 
         outputs = self.bert(
             input_ids=inputs['input_ids'],

@@ -1,6 +1,5 @@
 # src/common/managers/__init__.py
 from __future__ import annotations
-"""Manager access layer using factory pattern."""
 import logging
 from typing import Dict, Any, Optional
 from pathlib import Path

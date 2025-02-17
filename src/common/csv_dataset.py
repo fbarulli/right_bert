@@ -1,4 +1,5 @@
 # csv_dataset.py
+# csv_dataset.py
 import csv
 import logging
 import os
@@ -145,40 +146,19 @@ def process_batch_parallel(tokenizer: PreTrainedTokenizerFast, texts: List[str],
 
 class CSVDataset(Dataset):
     """
-    A PyTorch Dataset for loading data from a CSV file.  Uses memory-mapping
+    A PyTorch Dataset for loading data from a CSV file. Uses memory-mapping
     for efficient handling of large datasets.
 
     Args:
-        data_path (Union[str, Path]): Path to the CSV data file.
-        tokenizer (PreTrainedTokenizerFast): The Hugging Face tokenizer.
-        max_length (int): The maximum sequence length.
-        split (str): 'train' or 'val'.  Determines which portion of the data
+        data_path: Path to the CSV data file.
+        tokenizer: The Hugging Face tokenizer.
+        max_length: The maximum sequence length.
+        split: 'train' or 'val'.  Determines which portion of the data
             to use (based on train_ratio).
-        train_ratio (float): The ratio of data to use for training (the rest
+        train_ratio: The ratio of data to use for training (the rest
             is used for validation).
-        cache_dir (Union[str, Path], optional): Directory for caching.
+        cache_dir: Optional directory for caching.
             Defaults to '.cache' in the project root.
-
-    Attributes:
-        data_path (Path): Path to the CSV data file.
-        tokenizer (PreTrainedTokenizerFast): The Hugging Face tokenizer.
-        max_length (int): The maximum sequence length.
-        split (str): 'train' or 'val'.
-        train_ratio (float): The ratio of data to use for training.
-        cache_dir (Path): Directory for caching.
-        cache_prefix (Path): Prefix for cache files.
-        total_rows (int): The total number of rows in the dataset.
-        start_idx (int): The starting index for the current split.
-        end_idx (int): The ending index for the current split.
-        input_ids (np.memmap): Memory-mapped array of input IDs.
-        attention_mask (np.memmap): Memory-mapped array of attention masks.
-        special_tokens_mask (np.memmap): Memory-mapped array of special token masks.
-        word_ids (np.memmap): Memory-mapped array of word IDs.
-        labels (np.memmap): Memory-mapped array of labels.
-
-    Methods:
-        __len__(): Returns the length of the dataset (for the current split).
-        __getitem__(idx): Retrieves a single data sample.
     """
 
     def __init__(
@@ -198,7 +178,6 @@ class CSVDataset(Dataset):
         self.split = split
         self.train_ratio = train_ratio
 
-        # Use provided cache_dir or default to project root
         if cache_dir is None:
             self.cache_dir = Path(os.getcwd()) / '.cache'
         else:
@@ -229,7 +208,7 @@ class CSVDataset(Dataset):
         if split == 'train':
             self.start_idx = 0
             self.end_idx = self.split_idx
-        else:  # val
+        else:
             self.start_idx = self.split_idx
             self.end_idx = self.total_rows
         logger.debug(f"Dataset split: {self.split}, start_idx: {self.start_idx}, end_idx: {self.end_idx}")
@@ -266,16 +245,16 @@ class CSVDataset(Dataset):
                             rating = int(row['rating'])
                             if not 1 <= rating <= 5:
                                 logger.error(f"Rating must be between 1-5, got: {rating}")
-                                continue  # Skip this row
-                            label = rating - 1  # Convert 1-5 to 0-4
+                                continue
+                            label = rating - 1
                             texts.append(row['text'])
                             labels.append(label)
                         except ValueError:
                             logger.error(f"Rating must be an integer, got: {row['rating']}", exc_info=True)
-                            continue  # Skip this row
+                            continue
                     else:
                         texts.append(row['text'])
-                        labels.append(-1)  # Use -1 for no label
+                        labels.append(-1)
             logger.debug(f"Read {len(texts)} texts and {len(labels)} labels from CSV.")
 
             logger.info("Tokenizing texts...")
