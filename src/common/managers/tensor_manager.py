@@ -1,4 +1,4 @@
-# src/common/managers/tensor_manager.py
+#src/common/managers/tensor_manager.py
 import torch
 import logging
 import traceback
@@ -6,12 +6,11 @@ from typing import Optional, Union, List, Tuple, Dict, Any
 import numpy as np
 
 from src.common.managers.base_manager import BaseManager
-from src.common.managers import get_cuda_manager #Correct import
+from src.common.managers import get_cuda_manager # Corrected import: Use getter
 from src.common.cuda_utils import (
     is_cuda_available,
     clear_cuda_memory
 )
-
 logger = logging.getLogger(__name__)
 
 class TensorManager(BaseManager):
@@ -19,13 +18,14 @@ class TensorManager(BaseManager):
 
     def __init__(self):
         super().__init__()
-
+        self.cuda_manager = None # Initialize
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""
         try:
             super()._initialize_process_local(config)
-            if not get_cuda_manager().is_initialized():
+            self.cuda_manager = get_cuda_manager() # Get the instance here
+            if not self.cuda_manager.is_initialized():
                 raise RuntimeError("CUDA must be initialized before TensorManager")
 
             self._local.device = None

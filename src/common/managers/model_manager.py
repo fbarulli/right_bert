@@ -6,27 +6,19 @@ from typing import Dict, Any, Optional
 from transformers import PreTrainedModel, BertConfig
 from transformers.utils import logging as transformers_logging
 from transformers.utils.hub import HFValidationError
-from src.common.managers import get_cuda_manager 
 
-# Get manager instance
-cuda_manager = get_cuda_manager()
-import os
-import gc
-import weakref
-import threading
-
-from .base_manager import BaseManager
+from src.common.managers.base_manager import BaseManager
 
 logger = logging.getLogger(__name__)
 
 def get_embedding_model():
     """Get EmbeddingBert model at runtime to avoid circular imports."""
-    from src.embedding.models import EmbeddingBert  
+    from src.embedding.models import EmbeddingBert
     return EmbeddingBert
 
 def get_classification_model():
     """Get ClassificationBert model at runtime to avoid circular imports."""
-    from src.classification.models import ClassificationBert  
+    from src.classification.model import ClassificationBert
     return ClassificationBert
 
 class ModelManager(BaseManager):
@@ -36,7 +28,6 @@ class ModelManager(BaseManager):
         super().__init__()
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """Initialize process-local attributes."""
         super()._initialize_process_local(config)
         self._local.process_models = {}
         self._local.model_refs = weakref.WeakValueDictionary()
@@ -58,7 +49,6 @@ class ModelManager(BaseManager):
                 if tensor.device != device:
                     logger.error(f"State dict tensor {key} on {tensor.device}, expected {device}")
                     return False
-
             def check_inputs(module, input):
                 if isinstance(input, (tuple, list)):
                     for x in input:
@@ -73,7 +63,6 @@ class ModelManager(BaseManager):
             handle = model.register_forward_pre_hook(check_inputs)
             handle.remove()
             return True
-
         except Exception as e:
             logger.error(f"Error verifying model device: {str(e)}")
             return False
@@ -92,20 +81,20 @@ class ModelManager(BaseManager):
     def _optimize_model(self, model: torch.nn.Module, config: Dict[str, Any]) -> torch.nn.Module:
         """Apply PyTorch optimizations to model."""
         try:
-            if config['training'].get('jit', False):
+            if config.get('training', {}).get('jit', False):
                 logger.info("Applying TorchScript optimization")
                 with torch.jit.optimized_execution(True):
                     model = torch.jit.script(model)
 
-            if config['training'].get('compile', False):
+            if config.get('training', {}).get('compile', False):
                 logger.info("Applying torch.compile optimization")
                 model = torch.compile(
                     model,
-                    mode=config['training'].get('compile_mode', 'default'),
+                    mode=config.get('training', {}).get('compile_mode', 'default'),
                     fullgraph=True,
                     dynamic=False
                 )
-            if config['training'].get('static_graph', False):
+            if config.get('training', {}).get('static_graph', False):
                 logger.info("Enabling static graph optimization")
                 if hasattr(model, '_set_static_graph'):
                     model._set_static_graph()
@@ -126,9 +115,9 @@ class ModelManager(BaseManager):
         """Create model for worker using process-local resources."""
         current_pid = os.getpid()
         logger.debug(f"get_worker_model called from process {current_pid}")
+
+        cuda_manager = get_cuda_manager()
         if config:
-            if not hasattr(cuda_manager._local, 'initialized'):
-                cuda_manager.initialize()
             cuda_manager.setup(config)
 
         device = cuda_manager.get_device()
@@ -221,17 +210,22 @@ class ModelManager(BaseManager):
     def cleanup_worker(self, worker_id: int):
         """Cleanup worker's model resources for current process."""
         try:
+            # Remove models for this worker
             keys_to_remove = [k for k in self._local.process_models.keys() if k.startswith(f"{worker_id}_")]
             for key in keys_to_remove:
                 if key in self._local.process_models:
                     try:
+                        # Move model to CPU before deletion
                         model = self._local.process_models[key]
                         if model is not None:
+                            # Unregister from cuda_manager
                             cuda_manager.unregister_model(model)
+                            # Clear gradients
                             for param in model.parameters():
                                 if param.grad is not None:
                                     param.grad.detach_()
                                     param.grad.zero_()
+                            # Move to CPU
                             model.cpu()
                     except Exception as e:
                         logger.warning(f"Error cleaning up model: {str(e)}")
@@ -239,12 +233,17 @@ class ModelManager(BaseManager):
                         del self._local.process_models[key]
                         self._local.model_refs.pop(key, None)
 
+            # Force garbage collection
             gc.collect()
+
+            # Clean up CUDA resources
             cuda_manager.cleanup()
+
             logger.info(f"Cleaned up resources for worker {worker_id} in process {self._local.pid}")
 
         except Exception as e:
             logger.error(f"Error during worker cleanup: {str(e)}")
+            # Ensure CUDA is cleaned up even if other cleanup fails
             cuda_manager.cleanup()
 
 __all__ = ['ModelManager']

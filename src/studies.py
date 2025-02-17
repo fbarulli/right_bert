@@ -2,13 +2,12 @@
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 import optuna
 
 from src.common import (
     get_parameter_manager,
-    get_model_manager,
     get_data_manager,
     get_tokenizer_manager,
     get_directory_manager,
@@ -17,10 +16,8 @@ from src.common import (
     get_shared_tokenizer
 )
 from src.embedding.models import embedding_model_factory
-from src.embedding.embedding_training import train_embeddings
+from src.embedding.embedding_training import train_embeddings, validate_embeddings  # Corrected import
 from src.common.study.objective_factory import ObjectiveFactory
-from src.embedding.embedding_validation import validate_embeddings # Import
-
 
 logger = logging.getLogger(__name__)
 
@@ -32,19 +29,27 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
     # Get necessary managers
     optuna_manager = get_optuna_manager()
     parameter_manager = get_parameter_manager()
-    storage_manager = get_storage_manager()
     directory_manager = get_directory_manager()
     data_manager = get_data_manager()
     tokenizer_manager = get_tokenizer_manager()
     study = optuna_manager.study
 
+    def objective(trial):
+        parameter_manager = get_parameter_manager()
+        config = parameter_manager.get_trial_config(trial)
+        if config["training"]["num_trials"] > 1:
+            wandb_manager = get_wandb_manager()
+            wandb_manager.init_trial(trial.number)
+        objective_factory = ObjectiveFactory(config, output_path)
+        return objective_factory.objective(trial)
+
     # Run optimization
     try:
         if config["training"]["num_trials"] > 1:
             wandb_manager = get_wandb_manager()
-            wandb_manager.init_optimization()
+            wandb_manager.init_optimization()  # Initialize wandb for the entire optimization
             logger.info("Initializin optuna optimize")
-            best_trial = optuna_manager.optimize(config, output_path)
+            best_trial = optuna_manager.optimize(config, output_path) # Pass config to optimize
             if best_trial:
                 best_params = best_trial.params
                 best_value = best_trial.value
@@ -52,24 +57,21 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
             else:
                 logger.error("Optimization failed or no trials completed successfully.")
                 return
-        else:
-            trial = optuna.trial.FixedTrial(config['hyperparameters'])
+        else: # Run for one time
+            trial = optuna.trial.FixedTrial(config['hyperparameters'])  # Use a FixedTrial
             objective_factory = ObjectiveFactory(config, output_path)
             objective_factory.objective(trial)
-            best_params = config['hyperparameters']
+            best_params = config['hyperparameters'] # No optimization
     except Exception as e:
         logger.error(f"Study optimization failed: {e}")
         return
     finally:
         if config["training"]["num_trials"] > 1:
             wandb_manager.finish()
-
-    # --- Retrain with best hyperparameters ---
-    if config["training"]["num_trials"] > 1: # Only if we actually optimized
+    if config["training"]["num_trials"] > 1:
         if best_trial is None:
             logger.error("No best trial found. Cannot retrain.")
             return
-
         logger.info(f"Retraining with best parameters: {best_params}")
         final_config = parameter_manager.copy_base_config()
         parameter_manager.apply_fixed_params(final_config, best_params)
@@ -79,18 +81,9 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
 
     final_config['data']['train_ratio'] = 1.0
 
-    tokenizer = get_shared_tokenizer()
+    tokenizer = get_shared_tokenizer() #It is loaded on __init__
     train_loader, _, train_dataset, _ = data_manager.create_dataloaders(
-        data_path=Path(final_config['data']['csv_path']),
-        tokenizer=tokenizer,
-        max_length=final_config['data']['max_length'],
-        batch_size=final_config['training']['batch_size'],
-        train_ratio=1.0,
-        is_embedding=True,
-        mask_prob=final_config['data']['embedding_mask_probability'],
-        max_predictions=final_config['data']['max_predictions'],
-        max_span_length=final_config['data']['max_span_length'],
-        num_workers=final_config['training']['num_workers']
+        config = final_config # All data from config
     )
 
     final_model = embedding_model_factory(final_config)
@@ -117,7 +110,6 @@ def create_embedding_study(config: Dict[str, Any], output_path: Path):
     if config["training"]["num_trials"] > 1:
         wandb_manager.finish()
 
-    # --- Validate Embeddings (NEW) ---
     logger.info("Validating final embeddings...")
     validate_embeddings(
         model_path=str(output_dir),  # Use the output directory where the model was saved

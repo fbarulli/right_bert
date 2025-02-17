@@ -1,6 +1,8 @@
 # src/common/study/objective_factory.py
-from __future__ import annotations
 """Factory for creating Optuna objectives."""
+
+from __future__ import annotations
+
 import logging
 import os
 import gc
@@ -22,12 +24,11 @@ from src.common.managers import (
     get_resource_manager,
     get_parameter_manager,
     get_wandb_manager,
-    get_shared_tokenizer # For sharing tokenizer
+    get_shared_tokenizer
 )
 from src.embedding.dataset import EmbeddingDataset
 from src.embedding.embedding_trainer import EmbeddingTrainer
 from src.common.utils import create_directory
-from src.common.study.trial_state_manager import TrialStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -55,55 +56,36 @@ class ObjectiveFactory:
         logger.info(f"Running trial {trial.number} in process {current_pid}")
 
         try:
-            # --- Get Managers ---
             parameter_manager = get_parameter_manager()
+            trial_config = parameter_manager.get_trial_config(trial)
+            if trial_config["training"]["num_trials"] > 1:
+                wandb_manager = get_wandb_manager()
+                wandb_manager.init_trial(trial.number)
+
             cuda_manager = get_cuda_manager()
             data_manager = get_data_manager()
             tokenizer_manager = get_tokenizer_manager()
             directory_manager = get_directory_manager()
             model_manager = get_model_manager()
 
-            # --- Trial-Specific Configuration ---
-            trial_config = parameter_manager.get_trial_config(trial)
-
-            # --- Wandb Setup (per trial) ---
-            if trial_config["training"]["num_trials"] > 1:
-                wandb_manager = get_wandb_manager()
-                wandb_manager.init_trial(trial.number)
-
-            # --- Device Setup ---
             device = cuda_manager.get_device()
 
-            # --- Data Loading ---
-            tokenizer = get_shared_tokenizer()  # Use the SHARED tokenizer
+            tokenizer = get_shared_tokenizer()
             train_loader, val_loader, train_dataset, val_dataset = data_manager.create_dataloaders(
-                data_path=Path(trial_config['data']['csv_path']),
-                tokenizer=tokenizer,  # Pass the shared tokenizer
-                max_length=trial_config['data']['max_length'],
-                batch_size=trial_config['training']['batch_size'],
-                train_ratio=trial_config['data']['train_ratio'],
-                is_embedding=True,
-                mask_prob=trial_config['data']['embedding_mask_probability'],
-                max_predictions=trial_config['data']['max_predictions'],
-                max_span_length=trial_config['data']['max_span_length'],
-                num_workers=trial_config['training']['num_workers']
+                config = trial_config
             )
             logger.info(f"Created dataloaders in process {self.pid}")
 
-            # --- Model Creation ---
             from src.embedding.models import embedding_model_factory
             model = embedding_model_factory(trial_config, trial=trial)
-            model = model.to(device)  # Ensure model is on the correct device
+            model = model.to(device)
             logger.info(f"Created model in process {self.pid}")
 
-            # --- Trial Output Directory ---
             trial_output_dir = directory_manager.base_dir / "trials" / f"trial_{trial.number}"
             metrics_dir = create_directory(trial_output_dir / "metrics")
-
-            # --- Trial State Manager ---
+            from src.common.study.trial_state_manager import TrialStateManager
             trial_state_manager = TrialStateManager(trial, trial_config)
 
-            # --- Trainer Setup ---
             trainer = EmbeddingTrainer(
                 model=model,
                 train_loader=train_loader,
@@ -119,15 +101,14 @@ class ObjectiveFactory:
             )
             logger.info(f"Created trainer in process {self.pid}")
 
-            # --- Training ---
             trainer.train(trial_config['training']['num_epochs'])
-            trial_state_manager.update_state(TrialStatus.COMPLETED)  # Mark as completed
-            return trainer.best_val_loss  # Or best_val_acc, depending on optimization goal
+            trial_state_manager.update_state(TrialStatus.COMPLETED)
+            return trainer.best_val_loss
 
         except Exception as e:
             logger.error(f"Trial {trial.number} failed: {str(e)}", exc_info=True)
             if 'trial_state_manager' in locals():
-                trial_state_manager.update_state(TrialStatus.FAILED)  # Mark as failed
-            raise optuna.TrialPruned() # Make sure optuna prunes it
+                trial_state_manager.update_state(TrialStatus.FAILED)
+            raise optuna.TrialPruned()
 
 __all__ = ['ObjectiveFactory']

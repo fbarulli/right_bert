@@ -1,4 +1,3 @@
-# src/common/managers/cuda_manager.py
 import os
 import torch
 import logging
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 class CUDAManager(BaseManager):
     """Process-local CUDA manager."""
     def __init__(self):
-        super().__init__()
+        super().__init__() # Initialize base
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""
@@ -51,7 +50,6 @@ class CUDAManager(BaseManager):
             if hasattr(self._local, 'settings_initialized'):
                 delattr(self._local, 'settings_initialized')
             raise
-
     def is_available(self) -> bool:
         return torch.cuda.is_available()
 

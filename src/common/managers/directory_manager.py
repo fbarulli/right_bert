@@ -1,5 +1,6 @@
-# src/common/managers/directory_manager.py (Refactored)
+# src/common/managers/directory_manager.py
 from __future__ import annotations
+
 import logging
 import os
 import shutil
@@ -7,7 +8,7 @@ import hashlib
 from pathlib import Path
 from typing import Dict, Optional
 
-from .base_manager import BaseManager  
+from src.common.managers.base_manager import BaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,18 +18,15 @@ class DirectoryManager(BaseManager):
     def __init__(self, base_dir: Path):
         super().__init__()
         if base_dir is None:
-             raise ValueError("base_dir cannot be None")
-        self.base_dir = Path(base_dir)
+            raise ValueError("base_dir cannot be None")
+        self.base_dir = Path(base_dir)  # Store base_dir
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""
-        # Ensure base_dir is set and is a Path object
         if not hasattr(self, 'base_dir') or not isinstance(self.base_dir, Path):
             raise ValueError("DirectoryManager must be initialized with a base_dir Path object.")
 
         self.base_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create standard directories, now relative to base_dir
         self.cache_dir = self.base_dir / 'cache'
         self.mmap_dir = self.base_dir / 'mmap'
         self.cache_dir.mkdir(exist_ok=True)
@@ -104,4 +102,5 @@ class DirectoryManager(BaseManager):
             logger.debug("Cleaned up all temporary files")
         except Exception as e:
             logger.warning(f"Error in cleanup: {e}")
+
 __all__ = ['DirectoryManager']

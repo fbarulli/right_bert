@@ -6,21 +6,27 @@ from typing import Dict, Any, Optional, Union
 from torch.utils.data import DataLoader
 
 from src.common.managers.base_manager import BaseManager
+from src.common.managers import get_cuda_manager, get_tensor_manager # Corrected import
 
 logger = logging.getLogger(__name__)
 
 class BatchManager(BaseManager):
-    """Process-local batch manager for device placement."""
+    """Process-local batch manager for device placement and memory management."""
 
-    def __init__(self): # No arguments!
+    def __init__(self):
         super().__init__()
-        # self.cuda_manager = cuda_manager  # NO!
-        # self.tensor_manager = tensor_manager # NO!
+        self.cuda_manager = None  # Initialize to None
+        self.tensor_manager = None # Initialize to None
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         super()._initialize_process_local(config)
-        # No more runtime imports in _initialize_process_local!
-        self._local.device = None  # Initialize device
+        # Get the instances *inside* _initialize_process_local
+        self.cuda_manager = get_cuda_manager()
+        self.tensor_manager = get_tensor_manager()
+        self.cuda_manager.ensure_initialized()
+        self.tensor_manager.ensure_initialized()
+        self._local.device = None
+
 
     def prepare_batch(
         self,

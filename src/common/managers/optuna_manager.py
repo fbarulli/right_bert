@@ -1,5 +1,4 @@
 # src/common/managers/optuna_manager.py
-from __future__ import annotations
 import logging
 import os
 import threading
@@ -13,7 +12,8 @@ import multiprocessing as mp
 from src.common.study.study_storage import StudyStorage
 from src.common.study.study_config import StudyConfig
 from src.common.process.worker_utils import run_worker
-from .base_manager import BaseManager
+from src.common.managers.base_manager import BaseManager
+
 logger = logging.getLogger(__name__)
 
 class OptunaManager(BaseManager):
@@ -30,6 +30,7 @@ class OptunaManager(BaseManager):
         self.config = config
         self.storage_dir = storage_dir
 
+
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         super()._initialize_process_local(config)
         if not self.study_name or not self.config:
@@ -37,7 +38,6 @@ class OptunaManager(BaseManager):
 
         self.study_config = StudyConfig(self.config)
         self.study_config.validate_config()
-
         self.storage = StudyStorage(self.storage_dir or Path.cwd())
         self.storage_url = self.storage.get_storage_url()
 
@@ -67,10 +67,9 @@ class OptunaManager(BaseManager):
         self.worker_queue = mp.Queue()
         self.result_queue = mp.Queue()
         self._active_workers = {}
-
-        self._log_study_state()
         self._local.initialized = True
 
+        self._log_study_state()
 
     def _log_study_state(self) -> None:
         """Log current state of the study."""
@@ -98,10 +97,10 @@ class OptunaManager(BaseManager):
     def _start_workers(self, n_jobs: int) -> None:
         """Start worker processes."""
         logger.info(f"\n=== Starting {n_jobs} Worker Processes ===")
-        
+
         for worker_id in range(n_jobs):
             logger.info(f"\nPreparing worker {worker_id}")
-            
+
             args = (
                 worker_id,
                 self.study_name,
@@ -115,7 +114,7 @@ class OptunaManager(BaseManager):
             logger.info(f"- storage_url: {type(args[2])} = {args[2]}")
             logger.info(f"- worker_queue: {type(args[3])}")
             logger.info(f"- result_queue: {type(args[4])}")
-            
+
             try:
                 logger.info("Creating process...")
                 process = mp.Process(
@@ -123,12 +122,12 @@ class OptunaManager(BaseManager):
                     args=args,
                     daemon=True
                 )
-                
+
                 logger.info("Starting process...")
                 process.start()
                 self._active_workers[worker_id] = process
                 logger.info(f"Started worker {worker_id} with PID {process.pid}")
-                
+
             except Exception as e:
                 logger.error(f"Failed to start worker {worker_id}: {str(e)}")
                 logger.error(f"Traceback:\n{traceback.format_exc()}")
@@ -138,35 +137,35 @@ class OptunaManager(BaseManager):
         """Clean up worker processes."""
         logger.info("\n=== Cleaning Up Worker Processes ===")
         logger.info(f"Active workers: {len(self._active_workers)}")
-        
+
         logger.info("Sending exit signals to all workers...")
         for _ in range(len(self._active_workers)):
             self.worker_queue.put(None)
-        
+
         for worker_id, process in self._active_workers.items():
             logger.info(f"\nWaiting for worker {worker_id} (PID: {process.pid}) to finish...")
-            
+
             try:
                 process.join(timeout=30)
                 if process.is_alive():
                     logger.warning(f"Worker {worker_id} did not exit gracefully, terminating...")
                     process.terminate()
                     process.join(timeout=5)
-                    
+
                     if process.is_alive():
                         logger.error(f"Failed to terminate worker {worker_id}, killing...")
                         process.kill()
                         process.join(timeout=1)
-                        
+
                         if process.is_alive():
                             logger.error(f"Failed to kill worker {worker_id}")
                 else:
                     logger.info(f"Worker {worker_id} exited successfully")
-                    
+
             except Exception as e:
                 logger.error(f"Error cleaning up worker {worker_id}: {str(e)}")
                 logger.error(f"Traceback:\n{traceback.format_exc()}")
-        
+
         self._active_workers.clear()
         logger.info("\nAll workers cleaned up")
 
@@ -184,7 +183,7 @@ class OptunaManager(BaseManager):
             logger.info(f"Study name: {self.study_name}")
             logger.info(f"Storage URL: {self.storage_url}")
             logger.info(f"Queue types: worker_queue={type(self.worker_queue)}, result_queue={type(self.result_queue)}")
-            
+
             self._start_workers(n_jobs)
             logger.info("All workers started successfully")
 
@@ -202,31 +201,31 @@ class OptunaManager(BaseManager):
                     logger.error(f"Failed to create trial: {str(e)}")
                     logger.error(f"Traceback:\n{traceback.format_exc()}")
                     raise
-                
+
                 trial_data = {
                     'trial_number': trial.number,
                     'trial_params': trial.params,
                     'config': trial_config,
                     'output_path': str(output_path)
                 }
-                
+
                 logger.info("\n=== Trial Parameter Details ===")
                 logger.info(f"Trial number: {trial.number}")
                 logger.info(f"Trial parameters: {trial.params}")
                 logger.info(f"Config structure:")
                 for section in ['training', 'data']:
                     logger.info(f"- {section}: {trial_config[section]}")
-                
+
                 logger.info("\n=== Trial Data Structure ===")
                 logger.info(f"Trial number: {trial.number}")
                 logger.info(f"Config sections: {trial_config.keys()}")
-                
+
                 logger.info("\n=== Trial Data Types ===")
                 for key, value in trial_data.items():
                     logger.info(f"{key}: {type(value)}")
                     if isinstance(value, dict):
                         logger.info(f"{key} keys: {value.keys()}")
-                
+
                 self.worker_queue.put(trial_data)
                 logger.info(f"Successfully queued trial {trial.number}")
 
