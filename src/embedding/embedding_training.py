@@ -10,7 +10,7 @@ from pathlib import Path
 from torch.utils.data import DataLoader, Dataset
 
 # Corrected: Use absolute import
-from src.common.managers import get_wandb_manager
+from src.common import get_wandb_manager
 
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,4 @@
-# src/common/study/__init__.py
-#src/common/study/__init__.py
-# (Empty - makes 'study' a package)
+
+# src/training/__init__.py
+# src/training/__init__.py
+# (Empty - makes 'training' a package)
