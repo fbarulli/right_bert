@@ -1,3 +1,4 @@
+
 # src/common/managers/optuna_manager.py
 from __future__ import annotations
 import logging
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 class OptunaManager(BaseManager):
     """
     Manages optimization process using Optuna.
-    
+
     This manager handles:
     - Study creation and configuration
     - Worker process management
@@ -296,7 +297,7 @@ class OptunaManager(BaseManager):
         """Clean up optuna manager resources."""
         try:
             self._cleanup_workers()
-            self._local.study = None
+            self._local.study = None #dependent on storage_manager
             self._local.worker_queue = None
             self._local.result_queue = None
             logger.info(f"Cleaned up OptunaManager for process {self._local.pid}")

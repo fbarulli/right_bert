@@ -1,3 +1,4 @@
+
 # src/common/managers/__init__.py
 from __future__ import annotations
 import logging
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 def cleanup_managers(container: Optional[Container] = None):
     """
     Clean up all manager instances.
-    
+
     Args:
         container: Optional dependency injection container. If provided,
                   will use it to get and cleanup managers in the correct order.
@@ -18,7 +19,7 @@ def cleanup_managers(container: Optional[Container] = None):
     if container is not None:
         try:
             # Clean up in reverse dependency order
-            
+
             # Complex managers first
             if hasattr(container, 'resource_manager'):
                 container.resource_manager().cleanup()
@@ -29,20 +30,20 @@ def cleanup_managers(container: Optional[Container] = None):
             if hasattr(container, 'model_manager'):
                 container.model_manager().cleanup()
             if hasattr(container, 'metrics_manager'):
-                container.metrics_manager().cleanup()
+                container.metrics_manager().cleanup() #dependent on cuda_manager
             if hasattr(container, 'batch_manager'):
                 container.batch_manager().cleanup()
-            
+
             # Secondary managers
             if hasattr(container, 'amp_manager'):
                 container.amp_manager().cleanup()
-            if hasattr(container, 'tensor_manager'):
+            if hasattr(container, 'tensor_manager'): #dependent on cuda_manager
                 container.tensor_manager().cleanup()
             if hasattr(container, 'dataloader_manager'):
                 container.dataloader_manager().cleanup()
             if hasattr(container, 'storage_manager'):
                 container.storage_manager().cleanup()
-            
+
             # Primary managers last
             if hasattr(container, 'tokenizer_manager'):
                 container.tokenizer_manager().cleanup()
@@ -50,7 +51,7 @@ def cleanup_managers(container: Optional[Container] = None):
                 container.directory_manager().cleanup()
             if hasattr(container, 'cuda_manager'):
                 container.cuda_manager().cleanup()
-            
+
             logger.info("Successfully cleaned up all managers using DI container")
         except Exception as e:
             logger.error(f"Error during manager cleanup: {str(e)}")

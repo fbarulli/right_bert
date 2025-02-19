@@ -1,3 +1,4 @@
+
 # src/common/managers/amp_manager.py
 from __future__ import annotations
 import torch
@@ -156,7 +157,7 @@ class AMPManager(BaseManager):
     def autocast(self) -> None:
         """
         Context manager for AMP autocasting.
-        
+
         Usage:
             with amp_manager.autocast():
                 output = model(input)

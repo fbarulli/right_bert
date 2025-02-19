@@ -1,3 +1,4 @@
+
 # src/common/resource/resource_initializer.py
 from __future__ import annotations
 import logging
@@ -24,13 +25,15 @@ logger = logging.getLogger(__name__)
 class ResourceInitializer:
     """
     Initializes and cleans up process-local resources.
-    
+
     This class handles:
     - Manager initialization order
     - Configuration management
     - Resource cleanup
     - Error handling
     """
+
+    _config: Optional[Dict[str, Any]] = None  # Class-level config
 
     def __init__(
         self,
@@ -115,6 +118,9 @@ class ResourceInitializer:
             RuntimeError: If initialization fails
         """
         try:
+            # Store config at class level for worker access
+            ResourceInitializer._config = config
+
             # Initialize managers in order
             for name, manager in self._initialization_order:
                 try:
@@ -151,15 +157,15 @@ class ResourceInitializer:
                 elif name == 'WandB':
                     self._wandb_manager.finish()  # type: ignore
                 elif name == 'Storage':
-                    self._storage_manager.cleanup_all()
+                    self._storage_manager.cleanup()
                 elif name == 'Directory':
-                    self._directory_manager.cleanup_all()
+                    self._directory_manager.cleanup()
                 elif name == 'Model':
-                    self._model_manager.cleanup_all()
+                    self._model_manager.cleanup()
                 elif name == 'Tokenizer':
-                    self._tokenizer_manager.cleanup_all()
+                    self._tokenizer_manager.cleanup()
                 elif name == 'Tensor':
-                    self._tensor_manager.clear_memory()
+                    self._tensor_manager.cleanup()
 
             except Exception as e:
                 error_msg = f"Error during {name} manager cleanup: {str(e)}"

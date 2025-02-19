@@ -1,3 +1,4 @@
+
 # src/common/managers/directory_manager.py
 from __future__ import annotations
 import logging
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class DirectoryManager(BaseManager):
     """
     Manages directory structure for outputs and caching.
-    
+
     This manager handles:
     - Directory creation and structure
     - Cache management
@@ -40,7 +41,7 @@ class DirectoryManager(BaseManager):
         """
         if base_dir is None:
             raise ValueError("base_dir cannot be None")
-        
+
         self.base_dir = Path(base_dir)
         super().__init__(config)
         self._local.initialized_dirs = set()
@@ -57,7 +58,7 @@ class DirectoryManager(BaseManager):
 
             # Create directory structure
             self.base_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Initialize subdirectories
             self._local.cache_dir = self.base_dir / 'cache'
             self._local.mmap_dir = self.base_dir / 'mmap'

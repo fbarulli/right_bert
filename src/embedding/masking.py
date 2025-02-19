@@ -1,3 +1,4 @@
+
 # src/embedding/masking.py
 # src/embedding/masking.py
 from __future__ import annotations
@@ -28,7 +29,7 @@ class MaskingModule:
         """
         Initialize masking module.
         """
-        from src.common.utils import get_tensor_manager # Local import
+        from src.common import get_tensor_manager # Local import
         if not self.MIN_MASK_PROB <= mask_prob <= self.MAX_MASK_PROB:
             logger.warning(
                 f"Mask probability {mask_prob} outside recommended range "

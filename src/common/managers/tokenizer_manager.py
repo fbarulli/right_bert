@@ -1,3 +1,4 @@
+
 # src/common/managers/tokenizer_manager.py
 from __future__ import annotations
 import logging
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class TokenizerManager(BaseManager):
     """
     Process-local tokenizer manager.
-    
+
     This manager handles:
     - Tokenizer creation and caching
     - Worker-specific tokenizer management
@@ -192,7 +193,7 @@ class TokenizerManager(BaseManager):
         """Clean up tokenizer manager resources."""
         try:
             # Clear process-local tokenizers
-            self._local.process_tokenizers.clear()
+            self._local.process_tokenizers.clear() #can be dependent on model_manager if tokenizer is tied to model
             self._local.tokenizer_refs.clear()
 
             # Clear shared tokenizer

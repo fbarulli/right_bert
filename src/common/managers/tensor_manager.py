@@ -1,3 +1,4 @@
+
 # src/common/managers/tensor_manager.py
 from __future__ import annotations
 import torch
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class TensorManager(BaseManager):
     """
     Process-local tensor manager for device placement and memory management.
-    
+
     This manager handles:
     - Tensor creation and device placement
     - Memory pinning and management

@@ -1,3 +1,4 @@
+
 # main.py
 # main.py
 import logging
@@ -48,7 +49,7 @@ def train_model(wandb_manager = None) -> None:
             get_tokenizer_manager,
             get_directory_manager
         )
-        
+
         seed_everything(config['training']['seed'])
         output_dir = Path(config['output']['dir'])
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -108,16 +109,16 @@ def objective(trial):
     """Objective function for Optuna optimization."""
     from src.common.config_utils import load_yaml_config
     from src.common.managers import get_factory
-    
+
     # Get managers from factory
     factory = get_factory()
     parameter_manager = factory.get_parameter_manager()
     wandb_manager = factory.get_wandb_manager()
     factory = get_factory()
-    
+
     # Get trial configuration
     config = parameter_manager.get_trial_config(trial)
-    
+
     # Initialize wandb for this trial
     if factory.config["training"]["num_trials"] > 1:
         wandb_manager.init_trial(trial.number)
@@ -127,7 +128,7 @@ def objective(trial):
 
     # Return trial result
     best_val_loss = trial.user_attrs.get('best_val_loss', float('inf'))
-    return best_val_loss
+    return float(best_val_loss)
 
 def validate_config(config: Dict[str, Any]) -> bool:
     """Validate the configuration before starting training."""
@@ -168,7 +169,7 @@ def main():
         from src.common.config_utils import load_yaml_config
         logger.info(f"Main Process ID: {os.getpid()}")
 
-        
+
         # Load and validate configuration
         logger.info("Loading configuration...")
         config = load_yaml_config("config/embedding_config.yaml")
@@ -179,26 +180,26 @@ def main():
         if not validate_config(config):
             logger.error("Configuration validation failed. Exiting.")
             return
-        
+
         # Initialize manager factory
         from src.common.managers import initialize_factory
         config = load_yaml_config("config/embedding_config.yaml")
         initialize_factory(config)
-        
+
         # Setup logging after config is loaded and validated
         setup_logging(config=config)
-        
+
         logger.info("Configuration loaded and factory initialized")
         logger.info("\n=== Starting Training ===")
-        
+
         if config['training']['num_trials'] > 1:
             from src.common.managers import get_optuna_manager
             optuna_manager = get_optuna_manager()
             study = optuna_manager.study
             logger.info("Launching Optuna Study")
             study.optimize(
-                objective, 
-                n_trials=config["training"]["num_trials"], 
+                objective,
+                n_trials=config["training"]["num_trials"],
                 n_jobs=config["training"]["n_jobs"]
             )
         else:

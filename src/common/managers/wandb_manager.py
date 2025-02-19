@@ -1,3 +1,4 @@
+
 # src/common/managers/wandb_manager.py
 from __future__ import annotations
 import logging
@@ -30,7 +31,7 @@ except ImportError:
 class WandbManager(BaseManager):
     """
     Manages Weights & Biases logging and experiment tracking.
-    
+
     This manager handles:
     - W&B initialization and authentication
     - Run management and cleanup

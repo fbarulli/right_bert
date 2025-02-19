@@ -1,3 +1,4 @@
+
 # src/common/managers/storage_manager.py
 from __future__ import annotations
 import sqlite3
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 class StorageManager(BaseManager):
     """
     Manages Optuna storage and study persistence.
-    
+
     This manager handles:
     - Database initialization and configuration
     - Study creation and persistence
@@ -67,7 +68,7 @@ class StorageManager(BaseManager):
             effective_config = config if config is not None else self._config
             output_config = self.get_config_section(effective_config, 'output')
             base_dir = Path(output_config['dir'])
-            
+
             self._local.storage_dir = base_dir / output_config['storage_dir']
             self._local.storage_path = self._local.storage_dir / 'optuna.db'
             self._local.lock_path = self._local.storage_dir / 'optuna.lock'
@@ -281,7 +282,7 @@ class StorageManager(BaseManager):
                 "SELECT datetime_complete FROM trials "
                 "WHERE datetime_complete IS NOT NULL "
                 "ORDER BY datetime_complete DESC LIMIT 1"
-            )
+                )
             last_modified = cursor.fetchone()
 
             logger.info(

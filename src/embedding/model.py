@@ -1,3 +1,4 @@
+
 # src/embedding/model.py
 # src/embedding/model.py (CONFIRM ABSOLUTE IMPORTS)
 from __future__ import annotations
@@ -8,7 +9,7 @@ from transformers import BertPreTrainedModel, BertModel, BertConfig
 from typing import Dict, Any, Optional, Tuple, Union
 import optuna
 
-from src.common.managers import (
+from src.common import (
     get_cuda_manager,
     get_batch_manager,
     get_tensor_manager

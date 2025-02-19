@@ -1,3 +1,4 @@
+
 # src/common/resource/resource_factory.py
 from __future__ import annotations
 import logging
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 class ResourceFactory:
     """
     Factory for creating resources like datasets and dataloaders.
-    
+
     This factory handles:
     - Dataset creation for different stages
     - DataLoader configuration

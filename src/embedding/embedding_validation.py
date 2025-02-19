@@ -1,3 +1,4 @@
+
 # src/embedding/embedding_validation.py
 # src/embedding/embedding_validation.py
 from __future__ import annotations

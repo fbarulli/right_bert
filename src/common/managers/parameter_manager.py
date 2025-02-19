@@ -1,3 +1,4 @@
+
 # src/common/managers/parameter_manager.py
 from __future__ import annotations
 import logging
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class ParameterManager(BaseManager):
     """
     Centralized manager for handling trial parameters and configuration.
-    
+
     This manager handles:
     - Parameter mapping and ranges
     - Trial parameter suggestion

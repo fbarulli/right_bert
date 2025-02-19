@@ -1,3 +1,4 @@
+
 # src/embedding/embedding_trainer.py
 from __future__ import annotations
 import logging
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 class EmbeddingTrainer(BaseTrainer):
     """
     Trainer for learning embeddings through masked language modeling.
-    
+
     This trainer extends BaseTrainer with:
     - Learning rate scaling based on batch size
     - Linear warmup scheduler
@@ -40,7 +41,7 @@ class EmbeddingTrainer(BaseTrainer):
         train_loader: Optional[DataLoader],
         val_loader: Optional[DataLoader],
         config: Dict[str, Any],
-        metrics_dir: Optional[Path] = None,
+        metrics_dir: Optional[str] = None,
         is_trial: bool = False,
         trial: Optional['optuna.Trial'] = None,
         wandb_manager: Optional[WandbManager] = None,
@@ -162,7 +163,7 @@ class EmbeddingTrainer(BaseTrainer):
             if metrics['accuracy'] > self.best_val_acc:
                 self.best_val_acc = metrics['accuracy']
                 if self.trial:
-                    self.trial.set_user_attr('best_val_acc', self.best_val_acc)
+                    self.trial.set_user_attr('best_val_acc', float(self.best_val_acc))
                     self.trial.set_user_attr(
                         'epoch_metrics',
                         self.metrics_logger.epoch_metrics

@@ -1,3 +1,4 @@
+
 # src/common/managers/base_manager.py
 from __future__ import annotations
 import threading
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 class BaseManager(ABC):
     """
     Base class for managers with dependency injection support.
-    
+
     This class provides:
     - Process-local storage management
     - Initialization tracking
@@ -106,7 +107,7 @@ class BaseManager(ABC):
     def cleanup(self) -> None:
         """
         Clean up manager resources. Override in subclasses.
-        
+
         This method should:
         1. Release any acquired resources
         2. Reset any process-local state

@@ -20,13 +20,14 @@ from src.common.managers.tokenizer_manager import TokenizerManager
 from src.common.study.objective_factory import ObjectiveFactory
 from src.common.process.multiprocessing_setup import verify_spawn_method
 from src.common.resource.resource_initializer import ResourceInitializer
+from src.common import get_tokenizer_manager
 
 logger = logging.getLogger(__name__)
 
 class WorkerManager(BaseManager):
     """
     Manages worker processes for parallel optimization.
-    
+
     This manager handles:
     - Worker process creation and management
     - Resource monitoring and health checks
@@ -349,12 +350,21 @@ class WorkerManager(BaseManager):
                     output_path = Path(trial_data['output_path'])
                     ResourceInitializer.initialize_process(config)
 
+                    #create tokenizer for each worker
+                    tokenizer_manager = get_tokenizer_manager()
+                    tokenizer = tokenizer_manager.get_worker_tokenizer(
+                        worker_id=worker_id,
+                        model_name=config['model']['name'],
+                        model_type=config['model']['stage']
+                    )
+
+
                     # Create trial
                     trial = optuna.trial.FixedTrial(trial_data['trial_params'])
 
                     try:
                         # Execute trial
-                        factory = ObjectiveFactory(config, output_path)
+                        factory = ObjectiveFactory(config, output_path, tokenizer=tokenizer)
                         result = factory.objective(trial)
                         logger.info(f"Trial {trial_number} completed with result: {result}")
                         self._local.result_queue.put((trial_number, result, None))

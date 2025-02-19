@@ -1,3 +1,4 @@
+
 # csv_dataset.py
 # src/data/csv_dataset.py
 from __future__ import annotations
@@ -35,7 +36,7 @@ class TokenizedBatch:
     attention_mask: np.ndarray
     special_tokens_mask: np.ndarray
     word_ids: np.ndarray
-    labels: Optional[np.ndarray] = None
+    labels: Optional[np.ndarray]
     index: Optional[np.ndarray] = None
 
 

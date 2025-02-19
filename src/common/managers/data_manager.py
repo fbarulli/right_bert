@@ -1,3 +1,4 @@
+
 # src/common/managers/data_manager.py
 from __future__ import annotations
 import torch
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 class DataManager(BaseManager):
     """
     Manages data resources including datasets and dataloaders.
-    
+
     This manager handles:
     - Dataset creation and caching
     - Dataloader configuration
@@ -238,6 +239,3 @@ class DataManager(BaseManager):
             logger.error(f"Error cleaning up DataManager: {str(e)}")
             logger.error(traceback.format_exc())
             raise
-
-
-__all__ = ['DataManager']

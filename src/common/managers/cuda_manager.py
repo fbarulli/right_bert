@@ -1,3 +1,4 @@
+
 # src/common/managers/cuda_manager.py
 from __future__ import annotations
 import os
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class CUDAManager(BaseManager):
     """
     Process-local CUDA manager.
-    
+
     This manager handles:
     - CUDA initialization and device management
     - Memory tracking and cleanup

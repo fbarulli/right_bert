@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class ClassificationTrainer(BaseTrainer):
     """
     Trainer for fine-tuning BERT for classification tasks.
-    
+
     This trainer extends BaseTrainer with:
     - Classification-specific metrics tracking
     - Best accuracy tracking
@@ -133,7 +133,7 @@ class ClassificationTrainer(BaseTrainer):
             if metrics['accuracy'] > self.best_accuracy:
                 self.best_accuracy = metrics['accuracy']
                 if self.trial:
-                    self.trial.set_user_attr('best_accuracy', self.best_accuracy)
+                    self.trial.set_user_attr('best_accuracy', float(self.best_accuracy))
 
             # Log debug metrics
             logger.debug(

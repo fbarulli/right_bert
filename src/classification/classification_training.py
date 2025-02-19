@@ -1,3 +1,4 @@
+
 # classification_training.py
 # src/classification/classification_training.py
 from __future__ import annotations
@@ -28,6 +29,7 @@ from src.common.managers import (
 from src.common.utils import seed_everything, create_optimizer, create_scheduler
 from src.classification.classification_trainer import ClassificationTrainer
 from src.common.utils import load_yaml_config
+from src.classification.model import get_classification_model
 
 
 logger = logging.getLogger(__name__)
@@ -64,11 +66,9 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
             parameter_manager = get_parameter_manager()
             trial_config = parameter_manager.get_trial_config(trial)
             trial_config['model']['name'] = embedding_model_path
-            if trial_config["training"]["num_trials"] > 1:
-                from src.common.managers import get_wandb_manager
-                wandb_manager = get_wandb_manager()
-                
-                wandb_manager.init_trial(trial.number)
+            wandb_manager = get_wandb_manager()
+
+            wandb_manager.init_trial(trial.number)
             data_manager = get_data_manager()
             tokenizer_manager = get_tokenizer_manager()
             model_manager = get_model_manager()
@@ -112,7 +112,7 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
                 scheduler=local_vars['scheduler'],
                 is_trial=True,
                 trial=trial,
-                wandb_manager= wandb_manager if trial_config["training"]["num_trials"] > 1 else None,
+                wandb_manager= wandb_manager,
                 job_id=trial.number,
                 train_dataset=train_dataset,
                 val_dataset=val_dataset
@@ -156,11 +156,9 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
             logger.error(f"Traceback:\n{traceback.format_exc()}")
             raise optuna.TrialPruned(f"Trial failed: {str(e)}")
         finally:
-            if config["training"]["num_trials"] > 1:
-                from src.common.managers import get_wandb_manager
-                wandb_manager = get_wandb_manager()
-                
-                wandb_manager.finish_trial(trial.number)
+            wandb_manager = get_wandb_manager()
+
+            wandb_manager.finish_trial(trial.number)
             if torch.cuda.is_available():
                 for var_name, var in local_vars.items():
                     if var is not None:
@@ -186,9 +184,7 @@ def train_final_model(embedding_model_path: str, best_params: Dict[str, Any], co
     tokenizer_manager = get_tokenizer_manager()
     directory_manager = get_directory_manager()
     model_manager = get_model_manager()
-    if config["training"]["num_trials"] > 1:
-        from src.common.managers import get_wandb_manager
-        wandb_manager = get_wandb_manager()
+    wandb_manager = get_wandb_manager()
     tokenizer = tokenizer_manager.get_worker_tokenizer(
             worker_id=0,
             model_name=embedding_model_path,
@@ -212,8 +208,7 @@ def train_final_model(embedding_model_path: str, best_params: Dict[str, Any], co
     optimizer = create_optimizer(model, config['training'])
     scheduler = create_scheduler(optimizer, len(train_loader.dataset), config['training'])
 
-    if config["training"]["num_trials"] > 1:
-        wandb_manager.init_final_training()
+    wandb_manager.init_final_training()
     trainer = ClassificationTrainer(
         model=model,
         train_loader=train_loader,
@@ -224,7 +219,7 @@ def train_final_model(embedding_model_path: str, best_params: Dict[str, Any], co
         scheduler=scheduler,
         is_trial=False,
         trial=None,
-        wandb_manager= wandb_manager if config["training"]["num_trials"] > 1 else None,
+        wandb_manager= wandb_manager,
         job_id=0,
         train_dataset=train_dataset,
         val_dataset=val_dataset
@@ -239,8 +234,7 @@ def train_final_model(embedding_model_path: str, best_params: Dict[str, Any], co
         logger.info(f"- Accuracy: {val_metrics['accuracy']:.4f}")
 
     finally:
-        if config["training"]["num_trials"] > 1:
-            wandb_manager.finish()
+        wandb_manager.finish()
         if torch.cuda.is_available():
             del model
             del optimizer

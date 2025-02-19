@@ -1,11 +1,13 @@
+
 # logging_config.py
 # src/common/logging_config.py
 import os
 import logging
 import yaml
 import traceback
+from typing import Dict, Any
 
-def setup_logging(log_config: Dict[str, Any], default_level: int = logging.INFO) -> None:
+def setup_logging(config: Dict[str, Any], default_level: int = logging.INFO) -> None:
     try:
         level_str = log_config['level'].upper()
         level = getattr(logging, level_str, default_level)

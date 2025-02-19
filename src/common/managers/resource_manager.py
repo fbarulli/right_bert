@@ -1,3 +1,4 @@
+
 # src/common/managers/resource_manager.py
 from __future__ import annotations
 import torch
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 class ResourceConfig:
     """
     Serializable configuration for resources.
-    
+
     Attributes:
         dataset_params: Dataset configuration parameters
         dataloader_params: DataLoader configuration parameters
@@ -40,7 +41,7 @@ class ResourceConfig:
 class ProcessResourceManager(BaseManager):
     """
     Manages per-process resource creation and cleanup.
-    
+
     This manager handles:
     - Process-specific resource initialization
     - Resource pooling and memory management
@@ -106,6 +107,7 @@ class ProcessResourceManager(BaseManager):
             if effective_config:
                 resources_config = self.get_config_section(effective_config, 'resources')
                 self._local.resource_pool = ResourcePool(
+                    cuda_manager=self._cuda_manager,
                     memory_limit_gb=resources_config['max_memory_gb']
                 )
 
@@ -133,15 +135,23 @@ class ProcessResourceManager(BaseManager):
         """
         self.ensure_initialized()
         try:
+            tokenizer_manager = get_tokenizer_manager()
+            tokenizer = tokenizer_manager.get_worker_tokenizer(
+                worker_id=os.getpid(), #TODO: Fix worker id here
+                model_name=config['model']['name'],
+                model_type=config['model']['stage']
+            )
             train_dataset = resource_factory.create_resource(
                 'dataset',
                 config,
+                tokenizer = tokenizer,
                 split='train',
                 stage=stage
             )
             val_dataset = resource_factory.create_resource(
                 'dataset',
                 config,
+                tokenizer = tokenizer,
                 split='val',
                 stage=stage
             )

@@ -1,3 +1,4 @@
+
 # src/embedding/dataset.py
 # src/embedding/dataset.py
 from __future__ import annotations
@@ -9,10 +10,7 @@ from pathlib import Path
 from typing import Tuple, Optional, List, Set, Dict
 from transformers import PreTrainedTokenizerFast
 
-from src.data.csv_dataset import CSVDataset  # Absolute import
-from src.embedding.masking import SpanMaskingModule  # Absolute import
-
-from src.data.csv_dataset import CSVDataset  # Absolute import
+from src.data.csv_dataset import CSVDataset
 from src.embedding.masking import SpanMaskingModule  # Absolute import
 
 logger = logging.getLogger(__name__)

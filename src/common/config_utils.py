@@ -1,3 +1,4 @@
+
 # config_utils.py
 # src/common/config_utils.py
 from __future__ import annotations
@@ -40,7 +41,8 @@ PARAMETER_TYPES = {
         'log_every_n_steps': int,
         'debug_logging': bool,
         'study_name': str,
-        'warmup_ratio': float
+        'warmup_ratio': float,
+        'num_workers': int
     },
     'model': {
         'name': str,

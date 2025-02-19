@@ -1,3 +1,4 @@
+
 # src/common/managers/model_manager.py
 from __future__ import annotations
 import os
@@ -13,12 +14,14 @@ from transformers.utils.hub import HFValidationError
 from src.common.managers.base_manager import BaseManager
 from src.common.managers.cuda_manager import CUDAManager
 from src.common.managers.tokenizer_manager import TokenizerManager
+from src.embedding.model import get_embedding_model
+from src.classification.model import get_classification_model
 
 logger = logging.getLogger(__name__)
 
 def get_embedding_model():
     """Get EmbeddingBert model at runtime to avoid circular imports."""
-    from src.embedding.models import EmbeddingBert
+    from src.embedding.model import EmbeddingBert
     return EmbeddingBert
 
 def get_classification_model():
@@ -29,7 +32,7 @@ def get_classification_model():
 class ModelManager(BaseManager):
     """
     Manages model creation, loading, and device placement.
-    
+
     This manager handles:
     - Model initialization and configuration
     - Device placement and verification
@@ -137,9 +140,6 @@ class ModelManager(BaseManager):
         Args:
             model: The model to optimize
             config: Configuration dictionary
-
-        Returns:
-            torch.nn.Module: Optimized model
         """
         try:
             training_config = self.get_config_section(config, 'training')
@@ -316,7 +316,7 @@ class ModelManager(BaseManager):
         """Clean up model manager resources."""
         try:
             # Clear model caches
-            self._local.process_models.clear()
+            self._local.process_models.clear() #dependent on cuda_manager
             self._local.model_refs.clear()
 
             # Force garbage collection

@@ -1,3 +1,4 @@
+
 # src/common/managers/metrics_manager.py
 from __future__ import annotations
 import logging
@@ -11,6 +12,7 @@ from pathlib import Path
 from src.common.managers.base_manager import BaseManager
 from src.common.managers.cuda_manager import CUDAManager
 from src.common.managers.wandb_manager import WandbManager
+from src.common import get_tensor_manager
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +111,7 @@ class MetricsLogger:
 class MetricsManager(BaseManager):
     """
     Manages metric computation.
-    
+
     This manager handles:
     - Loss computation
     - Accuracy metrics
@@ -132,6 +134,7 @@ class MetricsManager(BaseManager):
         self._cuda_manager = cuda_manager
         self._local.device = None
         self._local.loss_fct = None
+        self._tensor_manager = get_tensor_manager()
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """

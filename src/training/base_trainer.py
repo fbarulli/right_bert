@@ -1,3 +1,4 @@
+
 # src/training/base_trainer.py
 from __future__ import annotations
 import logging
@@ -588,7 +589,7 @@ class BaseTrainer:
             )
 
             if self.is_trial and self.trial and phase.startswith('val'):
-                self.trial.report(metrics['loss'], step=self.current_step)
+                self.trial.report(float(metrics['loss']), step=self.current_step)
 
                 if self.trial.should_prune():
                     raise optuna.TrialPruned()
