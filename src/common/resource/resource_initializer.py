@@ -1,166 +1,179 @@
 # src/common/resource/resource_initializer.py
-# src/common/resource/resource_initializer.py (CORRECTED)
 from __future__ import annotations
 import logging
-from typing import Dict, Any, Optional
+import traceback
+from typing import Dict, Any, Optional, List
+
+from src.common.managers.cuda_manager import CUDAManager
+from src.common.managers.amp_manager import AMPManager
+from src.common.managers.data_manager import DataManager
+from src.common.managers.dataloader_manager import DataLoaderManager
+from src.common.managers.tensor_manager import TensorManager
+from src.common.managers.tokenizer_manager import TokenizerManager
+from src.common.managers.model_manager import ModelManager
+from src.common.managers.metrics_manager import MetricsManager
+from src.common.managers.parameter_manager import ParameterManager
+from src.common.managers.storage_manager import StorageManager
+from src.common.managers.directory_manager import DirectoryManager
+from src.common.managers.worker_manager import WorkerManager
+from src.common.managers.wandb_manager import WandbManager
+from src.common.managers.optuna_manager import OptunaManager
 
 logger = logging.getLogger(__name__)
 
-
 class ResourceInitializer:
-    """Initializes and cleans up process-local resources."""
+    """
+    Initializes and cleans up process-local resources.
+    
+    This class handles:
+    - Manager initialization order
+    - Configuration management
+    - Resource cleanup
+    - Error handling
+    """
 
-    _config: Optional[Dict[str, Any]] = None  # Class-level config
+    def __init__(
+        self,
+        cuda_manager: CUDAManager,
+        amp_manager: AMPManager,
+        data_manager: DataManager,
+        dataloader_manager: DataLoaderManager,
+        tensor_manager: TensorManager,
+        tokenizer_manager: TokenizerManager,
+        model_manager: ModelManager,
+        metrics_manager: MetricsManager,
+        parameter_manager: ParameterManager,
+        storage_manager: StorageManager,
+        directory_manager: DirectoryManager,
+        worker_manager: WorkerManager,
+        wandb_manager: Optional[WandbManager],
+        optuna_manager: Optional[OptunaManager]
+    ):
+        """
+        Initialize ResourceInitializer with dependency injection.
 
-    @classmethod
-    def initialize_process(cls, config: Optional[Dict[str, Any]] = None) -> None:
-        """Initialize process-local resources."""
-        if config is not None:
-            cls._config = config # Store the config
+        Args:
+            cuda_manager: Injected CUDAManager instance
+            amp_manager: Injected AMPManager instance
+            data_manager: Injected DataManager instance
+            dataloader_manager: Injected DataLoaderManager instance
+            tensor_manager: Injected TensorManager instance
+            tokenizer_manager: Injected TokenizerManager instance
+            model_manager: Injected ModelManager instance
+            metrics_manager: Injected MetricsManager instance
+            parameter_manager: Injected ParameterManager instance
+            storage_manager: Injected StorageManager instance
+            directory_manager: Injected DirectoryManager instance
+            worker_manager: Injected WorkerManager instance
+            wandb_manager: Optional injected WandbManager instance
+            optuna_manager: Optional injected OptunaManager instance
+        """
+        # Store injected managers
+        self._cuda_manager = cuda_manager
+        self._amp_manager = amp_manager
+        self._data_manager = data_manager
+        self._dataloader_manager = dataloader_manager
+        self._tensor_manager = tensor_manager
+        self._tokenizer_manager = tokenizer_manager
+        self._model_manager = model_manager
+        self._metrics_manager = metrics_manager
+        self._parameter_manager = parameter_manager
+        self._storage_manager = storage_manager
+        self._directory_manager = directory_manager
+        self._worker_manager = worker_manager
+        self._wandb_manager = wandb_manager
+        self._optuna_manager = optuna_manager
 
-        if cls._config is None:
-            raise RuntimeError("ResourceInitializer config not set.")
+        # Store initialization order
+        self._initialization_order = [
+            ('CUDA', self._cuda_manager),
+            ('AMP', self._amp_manager),
+            ('Data', self._data_manager),
+            ('DataLoader', self._dataloader_manager),
+            ('Tensor', self._tensor_manager),
+            ('Tokenizer', self._tokenizer_manager),
+            ('Model', self._model_manager),
+            ('Metrics', self._metrics_manager),
+            ('Parameter', self._parameter_manager),
+            ('Directory', self._directory_manager),
+            ('Storage', self._storage_manager)
+        ]
+        if self._wandb_manager:
+            self._initialization_order.append(('WandB', self._wandb_manager))
+        if self._optuna_manager:
+            self._initialization_order.append(('Optuna', self._optuna_manager))
+        self._initialization_order.append(('Worker', self._worker_manager))
 
-        # Initialize core managers (order matters)
-        from src.common.managers import (
-            get_cuda_manager,
-            get_amp_manager,
-            get_data_manager,
-            get_dataloader_manager,
-            get_tensor_manager,
-            get_tokenizer_manager,
-            get_model_manager,
-            get_metrics_manager,
-            get_parameter_manager,
-            get_storage_manager,
-            get_directory_manager,
-            get_worker_manager,
-            get_wandb_manager,
-            get_optuna_manager
-        )
+    def initialize_process(self, config: Dict[str, Any]) -> None:
+        """
+        Initialize process-local resources.
 
-        # Initialize CUDA *first*
-        cuda_manager = get_cuda_manager()
-        cuda_manager.ensure_initialized(cls._config)
+        Args:
+            config: Configuration dictionary
 
-        # Now initialize other managers
-        amp_manager = get_amp_manager()
-        amp_manager.ensure_initialized(cls._config)
-        data_manager = get_data_manager()
-        data_manager.ensure_initialized(cls._config)
-        dataloader_manager = get_dataloader_manager()
-        dataloader_manager.ensure_initialized(cls._config)
-        tensor_manager = get_tensor_manager()
-        tensor_manager.ensure_initialized(cls._config)
-        tokenizer_manager = get_tokenizer_manager()
-        tokenizer_manager.ensure_initialized(cls._config)
-        model_manager = get_model_manager()
-        model_manager.ensure_initialized(cls._config)
-        metrics_manager = get_metrics_manager()
-        metrics_manager.ensure_initialized(cls._config)
-        parameter_manager = get_parameter_manager()
-        parameter_manager.ensure_initialized(cls._config)
-        directory_manager = get_directory_manager()
-        directory_manager.ensure_initialized(cls._config)
-        storage_manager = get_storage_manager()
-        storage_manager.ensure_initialized(cls._config)
-        wandb_manager = get_wandb_manager()
-        wandb_manager.ensure_initialized(cls._config)
-        optuna_manager = get_optuna_manager()
-        optuna_manager.ensure_initialized(cls._config)
-        worker_manager = get_worker_manager()
-        worker_manager.ensure_initialized(cls._config)
+        Raises:
+            RuntimeError: If initialization fails
+        """
+        try:
+            # Initialize managers in order
+            for name, manager in self._initialization_order:
+                try:
+                    logger.debug(f"Initializing {name} manager")
+                    manager.ensure_initialized(config)
+                except Exception as e:
+                    logger.error(f"Failed to initialize {name} manager: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    raise RuntimeError(f"Failed to initialize {name} manager") from e
 
+            logger.info(
+                "Process resources initialized successfully:\n" +
+                "\n".join(f"- {name}" for name, _ in self._initialization_order)
+            )
 
-        logger.info("Process resources initialized.")
+        except Exception as e:
+            logger.error("Failed to initialize process resources")
+            logger.error(traceback.format_exc())
+            self.cleanup_process()  # Clean up any initialized resources
+            raise
 
-
-    @classmethod
-    def cleanup_process(cls) -> None:
+    def cleanup_process(self) -> None:
         """Clean up process-local resources."""
-        from src.common.managers import (
-            get_cuda_manager,
-            get_amp_manager,
-            get_data_manager,
-            get_dataloader_manager,
-            get_tensor_manager,
-            get_tokenizer_manager,
-            get_model_manager,
-            get_metrics_manager,
-            get_parameter_manager,
-            get_storage_manager,
-            get_directory_manager,
-            get_wandb_manager,
-            get_optuna_manager,
-            get_worker_manager
-        )
-        # Clean up managers (reverse order of initialization)
-        try:
-            worker_manager = get_worker_manager()
-            worker_manager.cleanup_workers()
-        except Exception as e:
-            logger.warning(f"Error during worker manager cleanup: {e}")
-        try:
-            optuna_manager = get_optuna_manager()
-            optuna_manager.cleanup()
-        except Exception as e:
-            logger.warning(f"Error during optuna manager cleanup: {e}")
-        try:
-            wandb_manager = get_wandb_manager()
-            wandb_manager.finish()
-        except Exception as e:
-            logger.warning(f"Error during wandb manager cleanup")
-        try:
-            storage_manager = get_storage_manager()
-            storage_manager.cleanup_all()
-        except Exception as e:
-            logger.warning(f"Error during storage manager cleanup: {e}")
+        cleanup_errors: List[str] = []
 
-        try:
-            directory_manager = get_directory_manager()
-            directory_manager.cleanup_all()
-        except Exception as e:
-             logger.warning(f"Error during directory manager cleanup: {e}")
-        #No cleanup needed for parameter manager
+        # Clean up in reverse order
+        for name, manager in reversed(self._initialization_order):
+            try:
+                logger.debug(f"Cleaning up {name} manager")
+                if hasattr(manager, 'cleanup'):
+                    manager.cleanup()
+                elif name == 'Worker':
+                    self._worker_manager.cleanup_workers()
+                elif name == 'WandB':
+                    self._wandb_manager.finish()  # type: ignore
+                elif name == 'Storage':
+                    self._storage_manager.cleanup_all()
+                elif name == 'Directory':
+                    self._directory_manager.cleanup_all()
+                elif name == 'Model':
+                    self._model_manager.cleanup_all()
+                elif name == 'Tokenizer':
+                    self._tokenizer_manager.cleanup_all()
+                elif name == 'Tensor':
+                    self._tensor_manager.clear_memory()
 
-        try:
-            metrics_manager = get_metrics_manager()
-        except Exception as e:
-             logger.warning(f"Error during metrics manager cleanup: {e}")
-        try:
-            model_manager = get_model_manager()
-            model_manager.cleanup_all()
-        except Exception as e:
-             logger.warning(f"Error during model manager cleanup: {e}")
-        try:
-            tokenizer_manager = get_tokenizer_manager()
-            tokenizer_manager.cleanup_all() # Cleanup tokenizer cache
-        except Exception as e:
-             logger.warning(f"Error during tokenizer manager cleanup: {e}")
-        try:
-            tensor_manager = get_tensor_manager()
-            tensor_manager.clear_memory()
-        except Exception as e:
-            logger.warning(f"Error during tensor manager cleanup: {e}")
-        try:
-            dataloader_manager = get_dataloader_manager()
-        except Exception as e:
-             logger.warning(f"Error during dataloader manager cleanup: {e}")
-        try:
-            data_manager = get_data_manager()
-        except Exception as e:
-             logger.warning(f"Error during data manager cleanup: {e}")
+            except Exception as e:
+                error_msg = f"Error during {name} manager cleanup: {str(e)}"
+                logger.warning(error_msg)
+                logger.warning(traceback.format_exc())
+                cleanup_errors.append(error_msg)
 
-        try:
-            amp_manager = get_amp_manager()
-        except Exception as e:
-            logger.warning(f"Error during AMP manager cleanup: {e}")
+        if cleanup_errors:
+            logger.warning(
+                "Process cleanup completed with errors:\n" +
+                "\n".join(f"- {error}" for error in cleanup_errors)
+            )
+        else:
+            logger.info("Process resources cleaned up successfully")
 
-        try:
-            cuda_manager = get_cuda_manager()
-            cuda_manager.cleanup()
 
-        except Exception as e:
-            logger.warning(f"Error during CUDA manager cleanup: {e}")
-
-        logger.info("Process resources cleaned up.")
+__all__ = ['ResourceInitializer']

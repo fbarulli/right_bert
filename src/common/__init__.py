@@ -66,6 +66,10 @@ def get_optuna_manager():
     from src.common.managers.optuna_manager import OptunaManager
     return OptunaManager("embedding_study", _config, Path(_config['output']['dir']) / 'storage')
 
+def get_worker_manager():
+    from src.common.managers.worker_manager import WorkerManager # Corrected: Import WorkerManager
+    return WorkerManager(_config, "embedding_study", f"sqlite:///{Path(_config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60") # Corrected: Instantiate WorkerManager
+
 def get_shared_tokenizer():
     from src.common.managers.tokenizer_manager import TokenizerManager
     tokenizer_manager = TokenizerManager()
@@ -94,5 +98,6 @@ __all__ = [
     'get_wandb_manager',
     'get_optuna_manager',
     'get_shared_tokenizer',
-    'set_shared_tokenizer'
+    'set_shared_tokenizer',
+    'get_worker_manager' # Corrected: Added back to __all__ (if it was removed accidentally)
 ]

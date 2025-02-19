@@ -8,13 +8,7 @@ import os
 from typing import Tuple, Optional, List, Set, Dict
 from transformers import PreTrainedTokenizerFast
 
-from src.common.managers import (  # Absolute import
-    get_tensor_manager,
-)
-
-# Get manager instances (assuming these are defined in src/common/managers.py)
-tensor_manager = get_tensor_manager()
-tokenizer_manager = get_tokenizer_manager()
+# Removed top-level import of get_tensor_manager
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +28,7 @@ class MaskingModule:
         """
         Initialize masking module.
         """
+        from src.common.utils import get_tensor_manager # Local import
         if not self.MIN_MASK_PROB <= mask_prob <= self.MAX_MASK_PROB:
             logger.warning(
                 f"Mask probability {mask_prob} outside recommended range "
@@ -43,6 +38,7 @@ class MaskingModule:
 
         self.tokenizer = tokenizer
         self.base_max_predictions = max_predictions
+        self.tensor_manager = get_tensor_manager() # Get tensor_manager here locally
         self.max_predictions = max_predictions
 
         self.special_token_ids = set([
@@ -146,7 +142,7 @@ class WholeWordMaskingModule(MaskingModule):
         if input_ids.dim() != 1:
             raise ValueError(f"Expected 1D input tensor, got: {input_ids.shape}")
 
-        input_ids = tensor_manager.create_cpu_tensor(input_ids.clone(), dtype=torch.long)
+        input_ids = self.tensor_manager.create_cpu_tensor(input_ids.clone(), dtype=torch.long)
         original_ids = input_ids.clone()
 
         word_ids_list = [None if i == -1 or m == 1 else i for i, m in zip(word_ids.tolist(), special_tokens_mask.tolist())]
@@ -201,7 +197,7 @@ class SpanMaskingModule(MaskingModule):
         if input_ids.dim() != 1:
             raise ValueError(f"Expected 1D input tensor, got shape: {input_ids.shape}")
 
-        input_ids = tensor_manager.create_cpu_tensor(input_ids.clone(), dtype=torch.long)
+        input_ids = self.tensor_manager.create_cpu_tensor(input_ids.clone(), dtype=torch.long)
         original_ids = input_ids.clone()
 
         word_ids_list = [None if id == -1 or mask == 1 else id for id, mask in zip(word_ids.tolist(), special_tokens_mask.tolist())]

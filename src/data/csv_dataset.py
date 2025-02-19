@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import gc
 from dataclasses import dataclass
 
-from src.common.managers import get_tensor_manager
+from src.common.utils import get_tensor_manager # Import from utils
 
 logger = logging.getLogger(__name__)
 

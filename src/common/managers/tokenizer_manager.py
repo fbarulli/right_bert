@@ -1,84 +1,136 @@
 # src/common/managers/tokenizer_manager.py
-# src/common/managers/tokenizer_manager.py (FINAL CORRECTED)
 from __future__ import annotations
 import logging
 import os
 import weakref
+import threading
+import traceback
 from typing import Dict, Any, Optional
 from transformers import PreTrainedTokenizerFast, AutoTokenizer
 from transformers.utils import logging as transformers_logging
-import threading
 
-from .base_manager import BaseManager
-# from src.common import get_shared_tokenizer, set_shared_tokenizer  # Import Moved down
+from src.common.managers.base_manager import BaseManager
 
 logger = logging.getLogger(__name__)
 
 class TokenizerManager(BaseManager):
-    """Process-local tokenizer manager."""
+    """
+    Process-local tokenizer manager.
+    
+    This manager handles:
+    - Tokenizer creation and caching
+    - Worker-specific tokenizer management
+    - Shared tokenizer access
+    - Resource cleanup
+    """
 
-    _shared_tokenizer = None  # Class-level shared tokenizer
-    _tokenizer_lock = threading.Lock()  # Lock for accessing the shared tokenizer
-
+    # Class-level shared resources
+    _shared_tokenizer: Optional[PreTrainedTokenizerFast] = None
+    _tokenizer_lock = threading.Lock()
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize Tokenizer Manager"""
-        super().__init__(config) # Initialize base.
-        # self.process_tokenizers = {}   # Moved to _initialize_process_local
-        # self.tokenizer_refs = weakref.WeakValueDictionary() # Moved
+        """
+        Initialize TokenizerManager.
 
-    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        super()._initialize_process_local(config)
-        logger.info(f"Initializing TokenizerManager for process {os.getpid()}")
+        Args:
+            config: Optional configuration dictionary
+        """
+        super().__init__(config)
         self._local.process_tokenizers = {}
         self._local.tokenizer_refs = weakref.WeakValueDictionary()
 
+    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Initialize process-local attributes.
+
+        Args:
+            config: Optional configuration dictionary that overrides the one from constructor
+        """
+        try:
+            super()._initialize_process_local(config)
+            logger.info(f"TokenizerManager initialized for process {self._local.pid}")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize TokenizerManager: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
 
     @classmethod
-    def set_shared_tokenizer(cls, tokenizer: PreTrainedTokenizerFast):
-        """Set the shared tokenizer instance."""
+    def set_shared_tokenizer(cls, tokenizer: PreTrainedTokenizerFast) -> None:
+        """
+        Set the shared tokenizer instance.
+
+        Args:
+            tokenizer: Tokenizer instance to share
+        """
         with cls._tokenizer_lock:
             cls._shared_tokenizer = tokenizer
+            logger.info("Set shared tokenizer")
 
     @classmethod
     def get_shared_tokenizer(cls) -> Optional[PreTrainedTokenizerFast]:
-        """Get the shared tokenizer instance."""
+        """
+        Get the shared tokenizer instance.
+
+        Returns:
+            Optional[PreTrainedTokenizerFast]: Shared tokenizer if available
+        """
         with cls._tokenizer_lock:
             return cls._shared_tokenizer
 
+    def get_worker_tokenizer(
+        self,
+        worker_id: int,
+        model_name: str,
+        model_type: str = 'embedding',
+        config: Optional[Dict[str, Any]] = None
+    ) -> PreTrainedTokenizerFast:
+        """
+        Get or create tokenizer for a worker.
 
-    def get_worker_tokenizer(self, worker_id: int, model_name: str, model_type: str = 'embedding', config: Optional[Dict[str, Any]] = None) -> PreTrainedTokenizerFast:
+        Args:
+            worker_id: Worker process ID
+            model_name: Name/path of the model
+            model_type: Type of model ('embedding' or 'classification')
+            config: Optional configuration dictionary
 
-        # self.ensure_initialized() # Removed. Called by get_shared.
+        Returns:
+            PreTrainedTokenizerFast: The tokenizer instance
 
-        logger.debug(f"get_worker_tokenizer called from process {os.getpid()}")
-        from src.common import get_shared_tokenizer, set_shared_tokenizer  # Import Moved here
-        # --- Check for shared tokenizer FIRST ---
-        shared_tokenizer = get_shared_tokenizer()
-        if shared_tokenizer is not None:
-            logger.info(f"Using shared tokenizer for worker {worker_id}")
-            return shared_tokenizer
-
-        cache_key = f"{worker_id}_{model_name}"
-
-        if cache_key in self._local.process_tokenizers:
-            tokenizer = self._local.process_tokenizers[cache_key]
-            if tokenizer is not None:
-                logger.info(f"Using cached tokenizer for worker {worker_id}")
-                return tokenizer
-            else:
-                logger.warning(f"Removing invalid tokenizer from cache for worker {worker_id}")
-                del self._local.process_tokenizers[cache_key]
-                self._local.tokenizer_refs.pop(cache_key, None)
-
-        logger.info(f"Creating new tokenizer for worker {worker_id} in process {os.getpid()}")
+        Raises:
+            ValueError: If model name is invalid
+            RuntimeError: If tokenizer creation fails
+        """
+        self.ensure_initialized()
 
         try:
+            logger.debug(f"get_worker_tokenizer called from process {self._local.pid}")
+
+            # Check shared tokenizer first
+            shared_tokenizer = self.get_shared_tokenizer()
+            if shared_tokenizer is not None:
+                logger.info(f"Using shared tokenizer for worker {worker_id}")
+                return shared_tokenizer
+
+            # Check cache
+            cache_key = f"{worker_id}_{model_name}"
+            if cache_key in self._local.process_tokenizers:
+                tokenizer = self._local.process_tokenizers[cache_key]
+                if tokenizer is not None:
+                    logger.info(f"Using cached tokenizer for worker {worker_id}")
+                    return tokenizer
+                else:
+                    logger.warning(f"Removing invalid tokenizer from cache for worker {worker_id}")
+                    del self._local.process_tokenizers[cache_key]
+                    self._local.tokenizer_refs.pop(cache_key, None)
+
+            # Create new tokenizer
+            logger.info(f"Creating new tokenizer for worker {worker_id} in process {self._local.pid}")
+
             if not isinstance(model_name, str) or not model_name.strip():
                 raise ValueError("Invalid model name provided")
 
             transformers_logging.set_verbosity_error()
-
             try:
                 tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
                 if not isinstance(tokenizer, PreTrainedTokenizerFast):
@@ -92,27 +144,68 @@ class TokenizerManager(BaseManager):
             if tokenizer is None:
                 raise ValueError("Tokenizer creation failed")
 
+            # Cache tokenizer
+            self._local.process_tokenizers[cache_key] = tokenizer
+            self._local.tokenizer_refs[cache_key] = tokenizer
+
+            logger.info(
+                f"Successfully created tokenizer for worker {worker_id} "
+                f"in process {self._local.pid}"
+            )
+            return tokenizer
+
         except Exception as e:
-            logger.error(f"Error creating tokenizer in process {os.getpid()}: {str(e)}")
+            logger.error(f"Error getting worker tokenizer: {str(e)}")
+            logger.error(traceback.format_exc())
             raise
 
-        self._local.process_tokenizers[cache_key] = tokenizer
-        self._local.tokenizer_refs[cache_key] = tokenizer
-        logger.info(f"Successfully created tokenizer for worker {worker_id} in process {os.getpid()}")
-        return tokenizer
+    def cleanup_worker(self, worker_id: int) -> None:
+        """
+        Clean up worker's tokenizer resources.
 
-    def cleanup_worker(self, worker_id: int):
-        # self.ensure_initialized() # Removed
-
+        Args:
+            worker_id: Worker process ID to cleanup
+        """
+        self.ensure_initialized()
         try:
-            keys_to_remove = [k for k in self._local.process_tokenizers.keys() if k.startswith(f"{worker_id}_")]
+            # Remove tokenizers for this worker
+            keys_to_remove = [
+                k for k in self._local.process_tokenizers.keys()
+                if k.startswith(f"{worker_id}_")
+            ]
             for key in keys_to_remove:
                 if key in self._local.process_tokenizers:
                     del self._local.process_tokenizers[key]
                     self._local.tokenizer_refs.pop(key, None)
 
-            logger.info(f"Cleaned up tokenizer resources for worker {worker_id} in process {os.getpid()}")
+            logger.info(
+                f"Cleaned up tokenizer resources for worker {worker_id} "
+                f"in process {self._local.pid}"
+            )
 
         except Exception as e:
-            logger.error(f"Error during worker cleanup: {str(e)}")
+            logger.error(f"Error cleaning up worker {worker_id}: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+
+    def cleanup(self) -> None:
+        """Clean up tokenizer manager resources."""
+        try:
+            # Clear process-local tokenizers
+            self._local.process_tokenizers.clear()
+            self._local.tokenizer_refs.clear()
+
+            # Clear shared tokenizer
+            with self._tokenizer_lock:
+                self._shared_tokenizer = None
+
+            logger.info(f"Cleaned up TokenizerManager for process {self._local.pid}")
+            super().cleanup()
+
+        except Exception as e:
+            logger.error(f"Error cleaning up TokenizerManager: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+
+
 __all__ = ['TokenizerManager']

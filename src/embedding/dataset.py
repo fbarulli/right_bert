@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Tuple, Optional, List, Set, Dict
 from transformers import PreTrainedTokenizerFast
 
-from src.common.managers import (  # Absolute import
-    get_tensor_manager,
-)
+from src.data.csv_dataset import CSVDataset  # Absolute import
+from src.embedding.masking import SpanMaskingModule  # Absolute import
+
 from src.data.csv_dataset import CSVDataset  # Absolute import
 from src.embedding.masking import SpanMaskingModule  # Absolute import
 

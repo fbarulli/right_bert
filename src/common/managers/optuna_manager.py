@@ -1,5 +1,5 @@
 # src/common/managers/optuna_manager.py
-# src/common/managers/optuna_manager.py (FINAL CORRECTED)
+from __future__ import annotations
 import logging
 import os
 import threading
@@ -10,146 +10,181 @@ import optuna
 from optuna.trial import TrialState
 import multiprocessing as mp
 
+from src.common.managers.base_manager import BaseManager
+from src.common.managers.storage_manager import StorageManager
 from src.common.study.study_storage import StudyStorage
 from src.common.study.study_config import StudyConfig
-# DELAYED IMPORTS
-# from src.common.process.worker_utils import run_worker
-from src.common.managers.base_manager import BaseManager
 
 logger = logging.getLogger(__name__)
 
 class OptunaManager(BaseManager):
-    """Manages optimization process using Optuna."""
+    """
+    Manages optimization process using Optuna.
+    
+    This manager handles:
+    - Study creation and configuration
+    - Worker process management
+    - Trial execution and monitoring
+    - Result collection and storage
+    """
 
-    def __init__(self, factory: 'ManagerFactory', study_name: str):
+    def __init__(
+        self,
+        storage_manager: StorageManager,
+        study_name: str,
+        config: Optional[Dict[str, Any]] = None
+    ):
         """
-        Initialize the OptunaManager.
+        Initialize OptunaManager.
 
         Args:
-            factory: The ManagerFactory instance.
-            study_name: Name of the Optuna study.
+            storage_manager: Injected StorageManager instance
+            study_name: Name of the Optuna study
+            config: Optional configuration dictionary
         """
-        super().__init__(factory)
-        self.study_name = study_name
-        self.study = None  # Initialize to None
-        self.storage_manager = factory.get_storage_manager()
-
-    def _setup_process_local(self) -> None:
-        """Setup process-local storage and initialize study."""
-        if not self.study_name:
+        if not study_name:
             raise ValueError("OptunaManager requires study_name to be set")
 
-        # Initialize study configuration and storage
-        self.study_config = StudyConfig(self.config)
-        self.study_config.validate_config()
-        self.storage = StudyStorage(self.storage_manager.storage_dir)
-        self.storage_url = self.storage.get_storage_url()
+        super().__init__(config)
+        self._storage_manager = storage_manager
+        self.study_name = study_name
+        self._local.study = None
+        self._local.worker_queue = None
+        self._local.result_queue = None
+        self._local.active_workers = {}
 
-        logger.info("\n=== Creating/Loading Study ===")
-        logger.info(f"Study name: {self.study_name}")
-        logger.info(f"Storage URL: {self.storage_url}")
-        logger.info(f"Sampler type: {type(self.study_config.sampler)}")
-        logger.info(f"Sampler parameters: {self.study_config.sampler.__dict__}")
+    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Initialize process-local attributes.
 
+        Args:
+            config: Optional configuration dictionary that overrides the one from constructor
+        """
         try:
-            self.study = optuna.create_study(
+            super()._initialize_process_local(config)
+
+            if not self._storage_manager.is_initialized():
+                raise RuntimeError("StorageManager must be initialized before OptunaManager")
+
+            # Initialize study configuration and storage
+            effective_config = config if config is not None else self._config
+            self._local.study_config = StudyConfig(effective_config)
+            self._local.study_config.validate_config()
+            self._local.storage = StudyStorage(self._storage_manager.storage_dir)
+            self._local.storage_url = self._local.storage.get_storage_url()
+
+            logger.info(
+                f"\nInitializing OptunaManager for process {self._local.pid}:\n"
+                f"- Study name: {self.study_name}\n"
+                f"- Storage URL: {self._local.storage_url}\n"
+                f"- Sampler type: {type(self._local.study_config.sampler)}\n"
+                f"- Sampler parameters: {self._local.study_config.sampler.__dict__}"
+            )
+
+            # Create or load study
+            self._local.study = optuna.create_study(
                 study_name=self.study_name,
-                storage=self.storage_url,
-                sampler=self.study_config.sampler,
+                storage=self._local.storage_url,
+                sampler=self._local.study_config.sampler,
                 direction='minimize',
                 load_if_exists=True
             )
-            logger.info("Study created/loaded successfully")
-            logger.info(f"Study ID: {self.study._study_id}") # type: ignore
-            logger.info(f"Study direction: {self.study.direction}") # type: ignore
-            logger.info(f"Study system attrs: {self.study.system_attrs}") # type: ignore
+
+            # Initialize queues for worker communication
+            self._local.worker_queue = mp.Queue()
+            self._local.result_queue = mp.Queue()
+            self._local.active_workers = {}
+
+            self._log_study_state()
+
         except Exception as e:
-            logger.error(f"Failed to create/load study: {str(e)}")
-            logger.error(f"Traceback:\n{traceback.format_exc()}")
+            logger.error(f"Failed to initialize OptunaManager: {str(e)}")
+            logger.error(traceback.format_exc())
             raise
-
-        self.worker_queue = mp.Queue()
-        self.result_queue = mp.Queue()
-        self._active_workers = {}
-        self._local.initialized = True
-
-        self._log_study_state()
 
     def _log_study_state(self) -> None:
         """Log current state of the study."""
-        if self.study is not None:
-            n_trials = len(self.study.trials)
-            completed_trials = len([t for t in self.study.trials if t.state == TrialState.COMPLETE])
-            failed_trials = len([t for t in self.study.trials if t.state == TrialState.FAIL])
-            pruned_trials = len([t for t in self.study.trials if t.state == TrialState.PRUNED])
+        if self._local.study is not None:
+            n_trials = len(self._local.study.trials)
+            completed_trials = len([
+                t for t in self._local.study.trials
+                if t.state == TrialState.COMPLETE
+            ])
+            failed_trials = len([
+                t for t in self._local.study.trials
+                if t.state == TrialState.FAIL
+            ])
+            pruned_trials = len([
+                t for t in self._local.study.trials
+                if t.state == TrialState.PRUNED
+            ])
 
-            logger.info("\n=== Study State ===")
-            logger.info(f"Total trials: {n_trials}")
-            logger.info(f"- Completed: {completed_trials}")
-            logger.info(f"- Failed: {failed_trials}")
-            logger.info(f"- Pruned: {pruned_trials}")
+            logger.info(
+                f"\nStudy State:\n"
+                f"- Total trials: {n_trials}\n"
+                f"- Completed: {completed_trials}\n"
+                f"- Failed: {failed_trials}\n"
+                f"- Pruned: {pruned_trials}"
+            )
 
             if completed_trials > 0:
-                best_trial = self.study.best_trial
-                logger.info("\n=== Best Trial ===")
-                logger.info(f"Number: {best_trial.number}")
-                logger.info(f"Value: {best_trial.value:.4f}")
-                logger.info(f"Duration: {best_trial.duration.total_seconds():.2f} seconds") # type: ignore
-                logger.info("Parameters:")
-                for k, v in best_trial.params.items():
-                    logger.info(f"- {k}: {v}")
+                best_trial = self._local.study.best_trial
+                logger.info(
+                    f"\nBest Trial:\n"
+                    f"- Number: {best_trial.number}\n"
+                    f"- Value: {best_trial.value:.4f}\n"
+                    f"- Duration: {best_trial.duration.total_seconds():.2f} seconds\n"
+                    f"- Parameters:\n"
+                    + "\n".join(f"  {k}: {v}" for k, v in best_trial.params.items())
+                )
 
     def _start_workers(self, n_jobs: int) -> None:
-        """Start worker processes."""
-        logger.info(f"\n=== Starting {n_jobs} Worker Processes ===")
+        """
+        Start worker processes.
+
+        Args:
+            n_jobs: Number of worker processes to start
+        """
+        self.ensure_initialized()
+        logger.info(f"\nStarting {n_jobs} worker processes")
 
         for worker_id in range(n_jobs):
-            logger.info(f"\nPreparing worker {worker_id}")
-            from src.common.process.worker_utils import run_worker #DELAYED
-            args = (
-                worker_id,
-                self.study_name,
-                self.storage_url,
-                self.worker_queue,
-                self.result_queue
-            )
-            logger.info("Worker arguments:")
-            logger.info(f"- worker_id: {type(args[0])} = {args[0]}")
-            logger.info(f"- study_name: {type(args[1])} = {args[1]}")
-            logger.info(f"- storage_url: {type(args[2])} = {args[2]}")
-            logger.info(f"- worker_queue: {type(args[3])}")
-            logger.info(f"- result_queue: {type(args[4])}")
-
             try:
-                logger.info("Creating process...")
+                from src.common.process.worker_utils import run_worker
+                args = (
+                    worker_id,
+                    self.study_name,
+                    self._local.storage_url,
+                    self._local.worker_queue,
+                    self._local.result_queue
+                )
+
                 process = mp.Process(
                     target=run_worker,
                     args=args,
                     daemon=True
                 )
-
-                logger.info("Starting process...")
                 process.start()
-                self._active_workers[worker_id] = process
+                self._local.active_workers[worker_id] = process
+
                 logger.info(f"Started worker {worker_id} with PID {process.pid}")
 
             except Exception as e:
                 logger.error(f"Failed to start worker {worker_id}: {str(e)}")
-                logger.error(f"Traceback:\n{traceback.format_exc()}")
+                logger.error(traceback.format_exc())
                 raise
 
     def _cleanup_workers(self) -> None:
         """Clean up worker processes."""
-        logger.info("\n=== Cleaning Up Worker Processes ===")
-        logger.info(f"Active workers: {len(self._active_workers)}")
+        self.ensure_initialized()
+        logger.info(f"\nCleaning up {len(self._local.active_workers)} worker processes")
 
-        logger.info("Sending exit signals to all workers...")
-        for _ in range(len(self._active_workers)):
-            self.worker_queue.put(None)
+        # Send exit signals
+        for _ in range(len(self._local.active_workers)):
+            self._local.worker_queue.put(None)
 
-        for worker_id, process in self._active_workers.items():
-            logger.info(f"\nWaiting for worker {worker_id} (PID: {process.pid}) to finish...")
-
+        # Wait for workers to finish
+        for worker_id, process in self._local.active_workers.items():
             try:
                 process.join(timeout=30)
                 if process.is_alive():
@@ -169,104 +204,107 @@ class OptunaManager(BaseManager):
 
             except Exception as e:
                 logger.error(f"Error cleaning up worker {worker_id}: {str(e)}")
-                logger.error(f"Traceback:\n{traceback.format_exc()}")
+                logger.error(traceback.format_exc())
 
-        self._active_workers.clear()
-        logger.info("\nAll workers cleaned up")
+        self._local.active_workers.clear()
+        logger.info("All workers cleaned up")
 
-    def optimize(self, config: Dict[str, Any], output_path: Path) -> Optional[optuna.trial.FrozenTrial]:
-        """Run optimization with proper process isolation."""
+    def optimize(
+        self,
+        config: Dict[str, Any],
+        output_path: Path
+    ) -> Optional[optuna.trial.FrozenTrial]:
+        """
+        Run optimization with proper process isolation.
+
+        Args:
+            config: Configuration dictionary
+            output_path: Path for output files
+
+        Returns:
+            Optional[optuna.trial.FrozenTrial]: Best trial if any completed successfully
+        """
+        self.ensure_initialized()
+
         n_trials = config['training']['num_trials']
         n_jobs = config['training']['n_jobs']
-        logger.info(f"\n=== Starting Optimization ===")
-        logger.info(f"Main Process ID: {os.getpid()}")
-        logger.info(f"Number of trials: {n_trials}")
-        logger.info(f"Number of workers: {n_jobs}")
 
         try:
-            logger.info("\n=== Worker Process Setup ===")
-            logger.info(f"Study name: {self.study_name}")
-            logger.info(f"Storage URL: {self.storage_url}")
-            logger.info(f"Queue types: worker_queue={type(self.worker_queue)}, result_queue={type(self.result_queue)}")
-
+            # Start workers
             self._start_workers(n_jobs)
-            logger.info("All workers started successfully")
 
+            # Run trials
             for trial_num in range(n_trials):
-                logger.info(f"\n=== Creating Trial {trial_num} ===")
                 try:
-                    trial = self.study.ask()  # type: ignore
-                    trial_config = self.study_config.suggest_parameters(trial)
-                    logger.info(f"Trial created successfully:")
-                    logger.info(f"- Number: {trial.number}")
-                    logger.info(f"- Suggested parameters: {trial.params}")
-                    logger.info(f"- User attrs: {trial.user_attrs}")
-                    logger.info(f"- System attrs: {trial.system_attrs}")
+                    # Create trial
+                    trial = self._local.study.ask()
+                    trial_config = self._local.study_config.suggest_parameters(trial)
+
+                    # Prepare trial data
+                    trial_data = {
+                        'trial_number': trial.number,
+                        'trial_params': trial.params,
+                        'config': trial_config,
+                        'output_path': str(output_path)
+                    }
+
+                    # Queue trial
+                    self._local.worker_queue.put(trial_data)
+                    logger.info(f"Queued trial {trial.number}")
+
                 except Exception as e:
-                    logger.error(f"Failed to create trial: {str(e)}")
-                    logger.error(f"Traceback:\n{traceback.format_exc()}")
+                    logger.error(f"Failed to create trial {trial_num}: {str(e)}")
+                    logger.error(traceback.format_exc())
                     raise
 
-                trial_data = {
-                    'trial_number': trial.number,
-                    'trial_params': trial.params,
-                    'config': trial_config,
-                    'output_path': str(output_path)
-                }
-
-                logger.info("\n=== Trial Parameter Details ===")
-                logger.info(f"Trial number: {trial.number}")
-                logger.info(f"Trial parameters: {trial.params}")
-                logger.info(f"Config structure:")
-                for section in ['training', 'data']:
-                    logger.info(f"- {section}: {trial_config[section]}")
-
-                logger.info("\n=== Trial Data Structure ===")
-                logger.info(f"Trial number: {trial.number}")
-                logger.info(f"Config sections: {trial_config.keys()}")
-
-                logger.info("\n=== Trial Data Types ===")
-                for key, value in trial_data.items():
-                    logger.info(f"{key}: {type(value)}")
-                    if isinstance(value, dict):
-                        logger.info(f"{key} keys: {value.keys()}")
-
-                self.worker_queue.put(trial_data)
-                logger.info(f"Successfully queued trial {trial.number}")
-
+            # Collect results
             completed_trials = 0
             while completed_trials < n_trials:
-                logger.info(f"\n=== Waiting for Trial Result {completed_trials + 1}/{n_trials} ===")
-                trial_num, result, error = self.result_queue.get()
-                logger.info(f"Received result for trial {trial_num}")
-                logger.info(f"Result type: {type(result)}")
-                logger.info(f"Error: {error}")
+                trial_num, result, error = self._local.result_queue.get()
 
                 if error:
                     logger.error(f"Trial {trial_num} failed: {error}")
-                    logger.info("Setting trial state to FAIL")
-                    self.study.tell(trial_num, state=optuna.trial.TrialState.FAIL) # type: ignore
+                    self._local.study.tell(trial_num, state=TrialState.FAIL)
                 else:
                     logger.info(f"Trial {trial_num} completed with value: {result}")
-                    logger.info("Telling study about trial result")
-                    self.study.tell(trial_num, result) # type: ignore
-                    logger.info("Study updated successfully")
+                    self._local.study.tell(trial_num, result)
 
                 completed_trials += 1
                 logger.info(f"Completed {completed_trials}/{n_trials} trials")
 
-            self.storage.save_trial_history(self.study.trials) # type: ignore
+            # Save results
+            self._local.storage.save_trial_history(self._local.study.trials)
 
-            if any(t.state == TrialState.COMPLETE for t in self.study.trials): # type: ignore
-                return self.study.best_trial # type: ignore
+            # Return best trial if any completed
+            if any(t.state == TrialState.COMPLETE for t in self._local.study.trials):
+                return self._local.study.best_trial
             else:
-                logger.warning("No trials completed successfully.")
+                logger.warning("No trials completed successfully")
                 return None
 
         except Exception as e:
             logger.error(f"Optimization failed: {str(e)}")
+            logger.error(traceback.format_exc())
             raise
+
         finally:
             self._cleanup_workers()
-            self.storage.log_database_status()
+            self._local.storage.log_database_status()
             logger.info("Optimization completed")
+
+    def cleanup(self) -> None:
+        """Clean up optuna manager resources."""
+        try:
+            self._cleanup_workers()
+            self._local.study = None
+            self._local.worker_queue = None
+            self._local.result_queue = None
+            logger.info(f"Cleaned up OptunaManager for process {self._local.pid}")
+            super().cleanup()
+        except Exception as e:
+            logger.error(f"Error cleaning up OptunaManager: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+
+
+__all__ = ['OptunaManager']
