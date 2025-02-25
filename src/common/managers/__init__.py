@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+from pathlib import Path
 from typing import Dict, Any, Optional
 from dependency_injector import containers, providers
 
@@ -41,7 +42,15 @@ class ManagerContainer(containers.DeclarativeContainer):
     dataloader_manager = providers.Singleton(DataLoaderManager, config=config)
     storage_manager = providers.Singleton(StorageManager, config=config)
     resource_manager = providers.Singleton(ProcessResourceManager, config=config)
-    worker_manager = WorkerManager()
+    worker_manager = providers.Singleton(
+        WorkerManager,
+        cuda_manager=cuda_manager,
+        model_manager=model_manager,
+        tokenizer_manager=tokenizer_manager,
+        config=config,
+        study_name="embedding_study",
+        storage_url=lambda: f"sqlite:///{Path(config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60"
+    )
 
 _container = None
 
