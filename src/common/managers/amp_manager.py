@@ -16,24 +16,11 @@ class AMPManager(BaseManager):
     """Process-local AMP (Automatic Mixed Precision) manager."""
 
     def __init__(self, cuda_manager: CUDAManager, config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize AMPManager.
-
-        Args:
-            cuda_manager: Injected CUDAManager instance
-            config: Optional configuration dictionary
-        """
         super().__init__(config)
-        self._cuda_manager = cuda_manager  # Set the injected cuda_manager
+        self._cuda_manager = cuda_manager  # Critical line
         self._initialize_process_local(config)
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize process-local attributes.
-
-        Args:
-            config: Optional configuration dictionary that overrides the one from constructor
-        """
         try:
             super()._initialize_process_local(config)
             effective_config = config if config is not None else self._config
