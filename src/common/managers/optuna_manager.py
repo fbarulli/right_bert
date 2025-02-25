@@ -294,17 +294,16 @@ class OptunaManager(BaseManager):
             logger.info("Optimization completed")
 
     def cleanup(self) -> None:
-        """Clean up optuna manager resources."""
         try:
-            self._cleanup_workers()
-            self._local.study = None #dependent on storage_manager
-            self._local.worker_queue = None
-            self._local.result_queue = None
-            logger.info(f"Cleaned up OptunaManager for process {self._local.pid}")
+            if hasattr(self, '_local'):
+                self._cleanup_workers()
+                self._local.study = None
+                self._local.worker_queue = None
+                self._local.result_queue = None
+                logger.info(f"Cleaned up OptunaManager for process {self._local.pid}")
             super().cleanup()
         except Exception as e:
             logger.error(f"Error cleaning up OptunaManager: {str(e)}")
-            logger.error(traceback.format_exc())
             raise
 
 

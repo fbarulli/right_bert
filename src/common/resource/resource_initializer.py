@@ -161,7 +161,7 @@ class ResourceInitializer:
             self.cleanup_process()  # Clean up any initialized resources
             raise
 
-    @classmethod
+    #@classmethod
     def cleanup_process(cls) -> None:
         """Clean up process-local resources."""
         cleanup_errors: List[str] = []

@@ -204,20 +204,36 @@ def main(config_file="config/embedding_config.yaml"):
                 n_jobs=config["training"]["n_jobs"]
             )
         else:
-            train_model()  # No need to pass config, it's in the factory
+            train_model()
 
     except Exception as e:
         logger.error(f"Training failed: {str(e)}")
         logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise
     finally:
-        # Clean up managers and resources
-        from src.common.managers import cleanup_managers
-        from src.common.resource.resource_initializer import ResourceInitializer
         logger.info("Cleaning up resources...")
-        #cleanup_managers() #removed
-        ResourceInitializer.cleanup_process()
+        # Use factory managers for cleanup
+        from src.common.managers import get_factory
+        factory = get_factory()
+        initializer = ResourceInitializer(
+            cuda_manager=factory.cuda_manager(),
+            amp_manager=factory.amp_manager(),
+            data_manager=factory.data_manager(),
+            dataloader_manager=factory.dataloader_manager(),
+            tensor_manager=factory.tensor_manager(),
+            tokenizer_manager=factory.tokenizer_manager(),
+            model_manager=factory.model_manager(),
+            metrics_manager=factory.metrics_manager(),
+            parameter_manager=factory.parameter_manager(),
+            storage_manager=factory.storage_manager(),
+            directory_manager=factory.directory_manager(),
+            worker_manager=factory.worker_manager(),
+            wandb_manager=factory.wandb_manager(),
+            optuna_manager=factory.optuna_manager()
+        )
+        initializer.cleanup_process()
 
+        
 if __name__ == "__main__":
     import multiprocessing as mp
     mp.set_start_method('spawn', force=True)
