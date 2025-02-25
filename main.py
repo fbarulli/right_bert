@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 import optuna
-
+from src.common.resource.resource_initializer import ResourceInitializer
 from src.common.utils import setup_logging, seed_everything
 from src.common.config_utils import load_yaml_config
 from src.common import (
@@ -186,7 +186,7 @@ def main(config_file="config/embedding_config.yaml"):
         logger.info(f"Model Stage: {config['model']['stage']}")
         logger.info(f"Model Name: {config['model']['name']}")
         if 'training' in config:
-            logger.info(f"Training Epochs: {config['training'].get('epochs', 'N/A')}")
+            logger.info(f"Training Epochs: {config['training'].get('num_epochs', 'N/A')}")
             logger.info(f"Batch Size: {config['training'].get('batch_size', 'N/A')}")
         logger.info("="*80 + "\n")
 
@@ -233,7 +233,7 @@ def main(config_file="config/embedding_config.yaml"):
         )
         initializer.cleanup_process()
 
-        
+
 if __name__ == "__main__":
     import multiprocessing as mp
     mp.set_start_method('spawn', force=True)
