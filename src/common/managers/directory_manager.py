@@ -24,27 +24,14 @@ class DirectoryManager(BaseManager):
     - Storage paths for databases and history
     """
 
-    def __init__(
-        self,
-        base_dir: Path,
-        config: Optional[Dict[str, Any]] = None
-    ):
-        """
-        Initialize DirectoryManager.
-
-        Args:
-            base_dir: Base directory for outputs and caching
-            config: Optional configuration dictionary
-
-        Raises:
-            ValueError: If base_dir is None
-        """
+    def __init__(self, base_dir: Path, config: Optional[Dict[str, Any]] = None):
         if base_dir is None:
             raise ValueError("base_dir cannot be None")
-
         self.base_dir = Path(base_dir)
-        self._local.initialized_dirs = set()  # Move this before super()
-        super().__init__(config)
+        super().__init__(config)  # Move this up to set self._local first
+        self._local.initialized_dirs = set()  # Then use self._local
+
+
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """

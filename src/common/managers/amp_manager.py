@@ -16,9 +16,9 @@ class AMPManager(BaseManager):
     """Process-local AMP (Automatic Mixed Precision) manager."""
 
     def __init__(self, cuda_manager: CUDAManager, config: Optional[Dict[str, Any]] = None):
-        super().__init__(config)
-        self._cuda_manager = cuda_manager  # Critical line
-        #self._initialize_process_local(config)
+        self._cuda_manager = cuda_manager
+        super().__init__(config)  # Single call to initialize
+        # Remove: self._initialize_process_local(config)
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         try:
