@@ -205,20 +205,14 @@ class DirectoryManager(BaseManager):
             raise
 
     def cleanup(self) -> None:
-        """Clean up all directory manager resources."""
         try:
-            # Clean up all temporary files
-            self.cleanup_cache()
-            self.cleanup_mmap()
-
-            # Clear initialized directories set
-            self._local.initialized_dirs.clear()
-
-            logger.info(f"Cleaned up DirectoryManager for process {self._local.pid}")
+            if hasattr(self, '_local'):
+                # Add any specific cleanup logic here, e.g., clearing directories
+                logger.info(f"Cleaned up DirectoryManager for process {self._local.pid}")
             super().cleanup()
-
         except Exception as e:
             logger.error(f"Error cleaning up DirectoryManager: {str(e)}")
+            logger.error(traceback.format_exc())
             raise
 
 

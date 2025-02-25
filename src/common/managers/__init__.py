@@ -30,14 +30,18 @@ class ManagerContainer(containers.DeclarativeContainer):
     data_manager = providers.Singleton(DataManager, config=config)
     model_manager = providers.Singleton(ModelManager, config=config)
     tokenizer_manager = providers.Singleton(TokenizerManager, config=config)
-    directory_manager = providers.Singleton(DirectoryManager, config=config)  # Already defined
+    directory_manager = providers.Singleton(
+    DirectoryManager,
+    base_dir=lambda: Path(config['output']['dir']),  # Use output dir from config
+    config=config
+)
     parameter_manager = providers.Singleton(ParameterManager, config=config)
     wandb_manager = providers.Singleton(WandbManager, config=config)
     amp_manager = providers.Singleton(
     AMPManager,
     cuda_manager=cuda_manager,  # Add this dependency
     config=config)
-    
+
     tensor_manager = providers.Singleton(TensorManager, config=config)
     batch_manager = providers.Singleton(BatchManager, config=config)
     metrics_manager = providers.Singleton(MetricsManager, config=config)
