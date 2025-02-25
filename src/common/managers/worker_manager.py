@@ -17,7 +17,6 @@ from src.common.managers.base_manager import BaseManager
 from src.common.managers.cuda_manager import CUDAManager
 from src.common.managers.model_manager import ModelManager
 from src.common.managers.tokenizer_manager import TokenizerManager
-from src.common.study.objective_factory import ObjectiveFactory
 from src.common.process.multiprocessing_setup import verify_spawn_method
 from src.common.resource.resource_initializer import ResourceInitializer
 from src.common import get_tokenizer_manager
@@ -363,6 +362,8 @@ class WorkerManager(BaseManager):
                     trial = optuna.trial.FixedTrial(trial_data['trial_params'])
 
                     try:
+                        # Import ObjectiveFactory here to avoid circular import
+                        from src.common.study.objective_factory import ObjectiveFactory
                         # Execute trial
                         factory = ObjectiveFactory(config, output_path, tokenizer=tokenizer)
                         result = factory.objective(trial)

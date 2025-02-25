@@ -180,6 +180,16 @@ def main(config_file="config/embedding_config.yaml"):
         # Setup logging after config is loaded and validated
         setup_logging(config=config)
 
+        # Display prominent message about which configuration file is being used
+        logger.info("\n" + "="*80)
+        logger.info(f"USING CONFIGURATION: {config_file}")
+        logger.info(f"Model Stage: {config['model']['stage']}")
+        logger.info(f"Model Name: {config['model']['name']}")
+        if 'training' in config:
+            logger.info(f"Training Epochs: {config['training'].get('epochs', 'N/A')}")
+            logger.info(f"Batch Size: {config['training'].get('batch_size', 'N/A')}")
+        logger.info("="*80 + "\n")
+
         logger.info("Configuration loaded and factory initialized")
         logger.info("\n=== Starting Training ===")
 
