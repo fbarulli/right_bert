@@ -46,7 +46,6 @@ class CUDAManager(BaseManager):
 
             if torch.cuda.is_available():
                 try:
-                    # Explicitly initialize CUDA
                     torch.cuda.init()
 
                     # Get device configuration
@@ -54,16 +53,14 @@ class CUDAManager(BaseManager):
                     device_id = None
                     if effective_config:
                         resources_config = self.get_config_section(effective_config, 'resources')
-                        if 'gpu_device_id' in resources_config:
-                            device_id = resources_config['gpu_device_id']
+                        device_id = resources_config.get('gpu_device_id')
 
-                    # Set device
+                    # Set device (default to cuda:0 if no specific ID)
                     if device_id is not None and device_id < torch.cuda.device_count():
                         self._local.device = torch.device(f"cuda:{device_id}")
                     else:
-                        self._local.device = torch.device("cuda")
+                        self._local.device = torch.device("cuda:0")  # Default to first GPU
 
-                    # Configure device
                     torch.cuda.set_device(self._local.device)
                     torch.cuda.reset_peak_memory_stats()
                     torch.cuda.reset_max_memory_allocated()

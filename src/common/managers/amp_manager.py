@@ -172,9 +172,11 @@ class AMPManager(BaseManager):
     def cleanup(self) -> None:
         """Clean up AMP manager resources."""
         try:
-            if hasattr(self._local, 'scaler'):
-                self._local.scaler = None
-            logger.info(f"Cleaned up AMPManager for process {self._local.pid}")
+            if hasattr(self, '_local'):
+                if hasattr(self._local, 'scaler'):
+                    self._local.scaler = None
+                logger.info(f"Cleaned up AMPManager for process {self._local.pid}")
+            super().cleanup()  # Ensure parent cleanup is called
         except Exception as e:
             logger.error(f"Error cleaning up AMPManager: {str(e)}")
             logger.error(traceback.format_exc())

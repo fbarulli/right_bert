@@ -27,6 +27,7 @@ class ManagerContainer(containers.DeclarativeContainer):
     """Dependency injection container for managers."""
     config = providers.Configuration()
 
+    # Define independent managers first
     cuda_manager = providers.Singleton(CUDAManager, config=config)
     data_manager = providers.Singleton(DataManager, config=config)
     model_manager = providers.Singleton(ModelManager, config=config)
@@ -34,14 +35,23 @@ class ManagerContainer(containers.DeclarativeContainer):
     directory_manager = providers.Singleton(DirectoryManager, config=config)
     parameter_manager = providers.Singleton(ParameterManager, config=config)
     wandb_manager = providers.Singleton(WandbManager, config=config)
-    optuna_manager = providers.Singleton(OptunaManager, config=config)
     amp_manager = providers.Singleton(AMPManager, config=config)
     tensor_manager = providers.Singleton(TensorManager, config=config)
     batch_manager = providers.Singleton(BatchManager, config=config)
     metrics_manager = providers.Singleton(MetricsManager, config=config)
     dataloader_manager = providers.Singleton(DataLoaderManager, config=config)
-    storage_manager = providers.Singleton(StorageManager, config=config)
+    storage_manager = providers.Singleton(StorageManager, config=config)  # Single definition
     resource_manager = providers.Singleton(ProcessResourceManager, config=config)
+
+    # Define optuna_manager with storage_manager dependency
+    optuna_manager = providers.Singleton(
+        OptunaManager,
+        storage_manager=storage_manager,  # Refers to the above storage_manager
+        study_name="embedding_study",
+        config=config
+    )
+
+    # worker_manager depends on others, so it goes last
     worker_manager = providers.Singleton(
         WorkerManager,
         cuda_manager=cuda_manager,
