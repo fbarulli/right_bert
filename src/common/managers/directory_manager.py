@@ -43,6 +43,10 @@ class DirectoryManager(BaseManager):
         try:
             super()._initialize_process_local(config)
 
+            # Ensure initialized_dirs exists
+            if not hasattr(self._local, 'initialized_dirs'):
+                self._local.initialized_dirs = set()
+
             # Create directory structure
             self.base_dir.mkdir(parents=True, exist_ok=True)
 

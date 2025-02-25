@@ -48,7 +48,7 @@ class DataManager(BaseManager):
         self._tokenizer_manager = tokenizer_manager
         self._dataloader_manager = dataloader_manager
         self._shared_datasets = {}
-        self._lock = threading.Lock()
+    self._lock = threading.Lock()
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """

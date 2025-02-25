@@ -29,18 +29,23 @@ class ManagerContainer(containers.DeclarativeContainer):
     cuda_manager = providers.Singleton(CUDAManager, config=config)
     directory_manager = providers.Singleton(
         DirectoryManager,
-        base_dir=config.output.dir,  # Use dot notation for Configuration
+        base_dir=config.output.dir,
         config=config
     )
-    data_manager = providers.Singleton(DataManager, config=config)
-    model_manager = providers.Singleton(ModelManager, config=config)
     tokenizer_manager = providers.Singleton(TokenizerManager, config=config)
+    dataloader_manager = providers.Singleton(DataLoaderManager, config=config)
+    data_manager = providers.Singleton(
+        DataManager,
+        tokenizer_manager=tokenizer_manager,  # Inject tokenizer_manager
+        dataloader_manager=dataloader_manager,  # Inject dataloader_manager
+        config=config
+    )
+    model_manager = providers.Singleton(ModelManager, config=config)
     parameter_manager = providers.Singleton(ParameterManager, config=config)
     wandb_manager = providers.Singleton(WandbManager, config=config)
     tensor_manager = providers.Singleton(TensorManager, config=config)
     batch_manager = providers.Singleton(BatchManager, config=config)
     metrics_manager = providers.Singleton(MetricsManager, config=config)
-    dataloader_manager = providers.Singleton(DataLoaderManager, config=config)
     resource_manager = providers.Singleton(ProcessResourceManager, config=config)
     amp_manager = providers.Singleton(
         AMPManager,
@@ -65,7 +70,7 @@ class ManagerContainer(containers.DeclarativeContainer):
         tokenizer_manager=tokenizer_manager,
         config=config,
         study_name="embedding_study",
-        storage_url=lambda: f"sqlite:///{Path(config.output.dir) / 'storage' / 'optuna.db'}?timeout=60"  # Update this too
+        storage_url=lambda: f"sqlite:///{Path(config.output.dir) / 'storage' / 'optuna.db'}?timeout=60"
     )
 
 _container = None
