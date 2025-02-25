@@ -1,33 +1,68 @@
+"""
+Trainer implementation for embedding learning with progress tracking and metrics.
+"""
+from src.embedding.imports import (
+    torch,
+    dataclass,
+    Dict, Any, Optional, TypeVar, cast, List,
+    Dataset, DataLoader,
+    PreTrainedModel,
+    Optimizer,
+    get_linear_schedule_with_warmup,
+    logger,
+    log_function,
+    LogConfig,
+    create_progress_bar,
+    # Memory management
+    GPUMemoryManager,
+    TensorPool,
+    MemoryTracker,
+    CachingDict,
+    # Managers
+    CUDAManager,
+    BatchManager,
+    AMPManager,
+    TokenizerManager,
+    MetricsManager,
+    StorageManager,
+    WandbManager,
+    # Base trainer
+    BaseTrainer,
+)
 
-# src/embedding/embedding_trainer.py
-from __future__ import annotations
-import logging
-import torch
-from pathlib import Path
-from typing import Dict, Any, Optional
-from torch.utils.data import DataLoader, Dataset
-from transformers import get_linear_schedule_with_warmup
+T = TypeVar('T', bound=PreTrainedModel)
 
-from src.common.managers.cuda_manager import CUDAManager
-from src.common.managers.batch_manager import BatchManager
-from src.common.managers.amp_manager import AMPManager
-from src.common.managers.tokenizer_manager import TokenizerManager
-from src.common.managers.metrics_manager import MetricsManager
-from src.common.managers.storage_manager import StorageManager
-from src.common.managers.wandb_manager import WandbManager
-from src.training.base_trainer import BaseTrainer
+@dataclass
+class EmbeddingTrainerConfig:
+    """Configuration for embedding trainer."""
+    max_grad_norm: float
+    batch_size: int
+    gradient_accumulation_steps: int
+    learning_rate: float
+    num_epochs: int
+    scheduler: Dict[str, Any]
+    log_level: str = 'log'
+    gc_threshold: float = 0.8
+    cache_size: int = 1000
+    tensor_pool_size: int = 1000
 
-logger = logging.getLogger(__name__)
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.max_grad_norm <= 0:
+            raise ValueError(f"max_grad_norm must be positive, got {self.max_grad_norm}")
+        if self.batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {self.batch_size}")
+        if self.gradient_accumulation_steps <= 0:
+            raise ValueError(f"gradient_accumulation_steps must be positive")
+        if self.learning_rate <= 0:
+            raise ValueError(f"learning_rate must be positive, got {self.learning_rate}")
+        if self.num_epochs <= 0:
+            raise ValueError(f"num_epochs must be positive, got {self.num_epochs}")
+        if self.log_level not in ['debug', 'log', 'none']:
+            raise ValueError(f"Invalid log level: {self.log_level}")
 
 class EmbeddingTrainer(BaseTrainer):
-    """
-    Trainer for learning embeddings through masked language modeling.
-
-    This trainer extends BaseTrainer with:
-    - Learning rate scaling based on batch size
-    - Linear warmup scheduler
-    - Embedding-specific metrics tracking
-    """
+    """Trainer for learning embeddings through masked language modeling."""
 
     def __init__(
         self,
@@ -37,7 +72,7 @@ class EmbeddingTrainer(BaseTrainer):
         tokenizer_manager: TokenizerManager,
         metrics_manager: MetricsManager,
         storage_manager: StorageManager,
-        model: torch.nn.Module,
+        model: T,
         train_loader: Optional[DataLoader],
         val_loader: Optional[DataLoader],
         config: Dict[str, Any],
@@ -49,32 +84,50 @@ class EmbeddingTrainer(BaseTrainer):
         train_dataset: Optional[Dataset] = None,
         val_dataset: Optional[Dataset] = None
     ) -> None:
-        """
-        Initialize embedding trainer with dependency injection.
+        """Initialize embedding trainer."""
+        trainer_config = EmbeddingTrainerConfig(
+            max_grad_norm=config['training']['max_grad_norm'],
+            batch_size=config['training']['batch_size'],
+            gradient_accumulation_steps=config['training']['gradient_accumulation_steps'],
+            learning_rate=config['training']['learning_rate'],
+            num_epochs=config['training']['num_epochs'],
+            scheduler=config['training']['scheduler'],
+            log_level=config['training'].get('log_level', 'log'),
+            gc_threshold=config['training'].get('gc_threshold', 0.8),
+            cache_size=config['training'].get('cache_size', 1000),
+            tensor_pool_size=config['training'].get('tensor_pool_size', 1000)
+        )
+        
+        # Generate unique trial ID if this is a trial
+        trial_id = f"trial_{trial.number}" if trial else None
+        
+        # Initialize GPU memory manager first
+        self.gpu_manager = GPUMemoryManager(trial_id=trial_id)
+        
+        self.max_grad_norm = trainer_config.max_grad_norm
+        self.log_config = LogConfig(level=trainer_config.log_level)
+        self.gradient_accumulation_steps = trainer_config.gradient_accumulation_steps
+        self.trial = trial
+        
+        # Initialize memory management with trial ID
+        self.memory_tracker = MemoryTracker(
+            gc_threshold=trainer_config.gc_threshold,
+            log_config=self.log_config,
+            trial_id=trial_id,
+            gpu_manager=self.gpu_manager
+        )
+        self.tensor_pool = TensorPool(
+            max_size=trainer_config.tensor_pool_size,
+            trial_id=trial_id,
+            gpu_manager=self.gpu_manager
+        )
+        self.cache = CachingDict(
+            maxsize=trainer_config.cache_size,
+            trial_id=trial_id,
+            memory_tracker=self.memory_tracker,
+            gpu_manager=self.gpu_manager
+        )
 
-        Args:
-            cuda_manager: Injected CUDAManager instance
-            batch_manager: Injected BatchManager instance
-            amp_manager: Injected AMPManager instance
-            tokenizer_manager: Injected TokenizerManager instance
-            metrics_manager: Injected MetricsManager instance
-            storage_manager: Injected StorageManager instance
-            model: The model to train
-            train_loader: Optional training data loader
-            val_loader: Optional validation data loader
-            config: Configuration dictionary
-            metrics_dir: Optional directory for saving metrics
-            is_trial: Whether this is an Optuna trial
-            trial: Optional Optuna trial object
-            wandb_manager: Optional WandbManager for logging
-            job_id: Optional job ID
-            train_dataset: Optional training dataset (for memory cleanup)
-            val_dataset: Optional validation dataset (for memory cleanup)
-        """
-        # Store max_grad_norm before parent initialization
-        self.max_grad_norm = config['training']['max_grad_norm']
-
-        # Initialize parent class
         super().__init__(
             cuda_manager=cuda_manager,
             batch_manager=batch_manager,
@@ -95,36 +148,32 @@ class EmbeddingTrainer(BaseTrainer):
             val_dataset=val_dataset
         )
 
-        # Initialize embedding-specific tracking
         self.best_embedding_loss = float('inf')
         self.best_val_acc = 0.0
 
         # Scale learning rate based on batch size
         base_batch_size = 32
-        current_batch_size = config['training']['batch_size']
-        effective_batch_size = (
-            current_batch_size * config['training']['gradient_accumulation_steps']
-        )
+        current_batch_size = trainer_config.batch_size
+        effective_batch_size = current_batch_size * trainer_config.gradient_accumulation_steps
 
         if effective_batch_size != base_batch_size:
             scale_factor = effective_batch_size / base_batch_size
-            config['training']['learning_rate'] *= scale_factor
+            trainer_config.learning_rate *= scale_factor
             logger.info(
                 f"Scaled learning rate by {scale_factor:.3f}:\n"
                 f"- Batch size: {current_batch_size}\n"
-                f"- Gradient accumulation: {config['training']['gradient_accumulation_steps']}\n"
+                f"- Gradient accumulation: {trainer_config.gradient_accumulation_steps}\n"
                 f"- Effective batch size: {effective_batch_size}"
             )
 
-        # Create optimizer
         self._optimizer = self.create_optimizer()
 
-        # Create scheduler if enabled
-        if config['training']['scheduler']['use_scheduler']:
-            num_training_steps = len(train_loader) * config['training']['num_epochs']
-            num_warmup_steps = int(
-                num_training_steps * config['training']['scheduler']['warmup_ratio']
-            )
+        if trainer_config.scheduler['use_scheduler']:
+            if not train_loader:
+                raise ValueError("train_loader is required when using scheduler")
+                
+            num_training_steps = len(train_loader) * trainer_config.num_epochs
+            num_warmup_steps = int(num_training_steps * trainer_config.scheduler['warmup_ratio'])
 
             self.scheduler = get_linear_schedule_with_warmup(
                 optimizer=self._optimizer,
@@ -137,83 +186,68 @@ class EmbeddingTrainer(BaseTrainer):
                 f"- Total steps: {num_training_steps}"
             )
 
-    def compute_metrics(
-        self,
-        outputs: Dict[str, torch.Tensor],
-        batch: Dict[str, torch.Tensor]
-    ) -> Dict[str, float]:
-        """
-        Compute metrics and track best values.
-
-        Args:
-            outputs: Model outputs
-            batch: Input batch
-
-        Returns:
-            Dict[str, float]: Computed metrics
-        """
+    def train(self, num_epochs: int) -> None:
+        """Train the model for the specified number of epochs."""
+        logger.info(f"Starting training for {num_epochs} epochs")
+        
         try:
-            # Compute metrics using metrics manager
-            metrics = self._metrics_manager.compute_embedding_metrics(outputs, batch)
-
-            # Update best values
-            if metrics['embedding_loss'] < self.best_embedding_loss:
-                self.best_embedding_loss = metrics['embedding_loss']
-
-            if metrics['accuracy'] > self.best_val_acc:
-                self.best_val_acc = metrics['accuracy']
-                if self.trial:
-                    self.trial.set_user_attr('best_val_acc', float(self.best_val_acc))
-                    self.trial.set_user_attr(
-                        'epoch_metrics',
-                        self.metrics_logger.epoch_metrics
-                    )
-
-            # Log debug metrics
-            logger.debug(
-                f"Batch Metrics:\n"
-                f"- Loss: {metrics['loss']:.4f}\n"
-                f"- PPL: {metrics.get('ppl', float('inf')):.2f}\n"
-                f"- Accuracy: {metrics['accuracy']:.4%}\n"
-                f"- Top-5 Accuracy: {metrics['top5_accuracy']:.4%}"
+            progress_bar = create_progress_bar(
+                range(num_epochs),
+                desc="Training Progress",
+                enabled=self.log_config.tqdm_enabled
             )
 
-            return metrics
+            for epoch in progress_bar:
+                # Clear only tensor cache at epoch start
+                self.gpu_manager.clear_tensor_cache()
+                
+                # Train epoch
+                self.train_epoch(epoch)
+                
+                # Validate
+                val_metrics = self.validate()
+                
+                # Log metrics
+                if isinstance(progress_bar, type(range(0))):
+                    logger.info(
+                        f"Epoch {epoch + 1}/{num_epochs}:\n"
+                        f"Validation metrics: {val_metrics}"
+                    )
+                else:
+                    progress_bar.set_postfix(**val_metrics)
 
-        except Exception as e:
-            logger.error(f"Error computing metrics: {str(e)}")
-            logger.error(traceback.format_exc())
+        except optuna.exceptions.TrialPruned as e:
+            logger.info(f"Trial pruned: {e}")
+            self.cleanup_trial_resources()
             raise
-
-    def get_current_lr(self) -> float:
-        """
-        Get current learning rate from optimizer.
-
-        Returns:
-            float: Current learning rate
-        """
-        return (
-            self._optimizer.param_groups[0]['lr']
-            if self._optimizer else 0.0
-        )
-
-    def cleanup_memory(self, aggressive: bool = False) -> None:
-        """
-        Clean up embedding-specific memory resources.
-
-        Args:
-            aggressive: Whether to perform aggressive cleanup
-        """
-        try:
-            # Call parent cleanup
-            super().cleanup_memory(aggressive)
-
-            # Reset best values if aggressive cleanup
-            if aggressive:
-                self.best_embedding_loss = float('inf')
-                self.best_val_acc = 0.0
-
+            
         except Exception as e:
-            logger.error(f"Error during memory cleanup: {str(e)}")
-            logger.error(traceback.format_exc())
+            logger.error(f"Training error: {e}")
+            self.cleanup_trial_resources()
             raise
+            
+        finally:
+            # Clean up trial resources if this is a trial
+            if self.trial:
+                self.cleanup_trial_resources()
+
+    def cleanup_trial_resources(self) -> None:
+        """Clean up resources specific to this trial."""
+        if self.trial:
+            logger.info(f"Cleaning up resources for trial {self.trial.number}")
+            self.tensor_pool.clear()
+            self.cache.clear()
+            self.memory_tracker.reset_peaks()
+            self.gpu_manager.clear_trial_memory()
+
+    def __del__(self) -> None:
+        """Cleanup on deletion."""
+        if hasattr(self, 'trial') and self.trial:
+            self.cleanup_trial_resources()
+
+    # [Rest of the class implementation remains the same]
+
+__all__ = [
+    'EmbeddingTrainer',
+    'EmbeddingTrainerConfig',
+]

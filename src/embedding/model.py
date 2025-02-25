@@ -1,22 +1,30 @@
-
-# src/embedding/model.py
-# src/embedding/model.py (CONFIRM ABSOLUTE IMPORTS)
-from __future__ import annotations
-import logging
-import torch
-import torch.nn as nn
-from transformers import BertPreTrainedModel, BertModel, BertConfig
-from typing import Dict, Any, Optional, Tuple, Union
-import optuna
-
-from src.common import (
-    get_cuda_manager,
-    get_batch_manager,
-    get_tensor_manager
+"""
+BERT model implementation for embedding learning through masked language modeling.
+"""
+from src.embedding.imports import (
+    dataclass,
+    torch,
+    nn,
+    BertPreTrainedModel,
+    BertModel,
+    BertConfig,
+    PreTrainedModel,
+    Dict, Any, Optional, Tuple, Union, cast,
+    Tensor,
+    optuna,
+    logger,
+    log_function,
+    LogConfig,
 )
 
-
-logger = logging.getLogger(__name__)
+@dataclass
+class EmbeddingModelConfig:
+    """Configuration for embedding model."""
+    name: str
+    hidden_dropout_prob: float
+    attention_probs_dropout_prob: float
+    tie_weights: bool = True
+    log_level: str = 'log'
 
 class EmbeddingBert(BertPreTrainedModel):
     """BERT model for learning embeddings through masked token prediction."""
@@ -24,12 +32,19 @@ class EmbeddingBert(BertPreTrainedModel):
     def __init__(
         self,
         config: BertConfig,
-        tie_weights: bool = True
-    ):
+        tie_weights: bool = True,
+        log_config: Optional[LogConfig] = None
+    ) -> None:
         """
         Initialize model.
+
+        Args:
+            config: BertConfig instance with model parameters
+            tie_weights: Whether to tie embedding and output weights
+            log_config: Logging configuration
         """
         super().__init__(config)
+        self.log_config = log_config or LogConfig()
 
         self.bert = BertModel(config)
         self.cls = BertEmbeddingHead(config)
@@ -49,47 +64,34 @@ class EmbeddingBert(BertPreTrainedModel):
             f"- Tied weights: {tie_weights}"
         )
 
+    @log_function()
     def get_output_embeddings(self) -> nn.Linear:
         """Get output embeddings layer."""
         return self.cls.predictions.decoder
 
-    def set_output_embeddings(self, new_embeddings: nn.Linear):
+    @log_function()
+    def set_output_embeddings(self, new_embeddings: nn.Linear) -> None:
         """Set output embeddings layer."""
         self.cls.predictions.decoder = new_embeddings
 
+    @log_function()
     def forward(
         self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        token_type_ids: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
+        input_ids: Tensor,
+        attention_mask: Tensor,
+        token_type_ids: Optional[Tensor] = None,
+        position_ids: Optional[Tensor] = None,
+        labels: Optional[Tensor] = None,
         output_hidden_states: bool = False,
         output_attentions: bool = False,
         return_dict: bool = True
-    ) -> Union[Tuple, Dict[str, torch.Tensor]]:
-        """
-        Forward pass.
-        """
-        batch_manager = get_batch_manager()
-        inputs = {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask
-        }
-        if token_type_ids is not None:
-            inputs['token_type_ids'] = token_type_ids
-        if position_ids is not None:
-            inputs['position_ids'] = position_ids
-        if labels is not None:
-            inputs['labels'] = labels
-
-        inputs = batch_manager.prepare_batch(inputs, self.device)
-
+    ) -> Union[Tuple[Tensor, ...], Dict[str, Tensor]]:
+        """Forward pass through the model."""
         outputs = self.bert(
-            input_ids=inputs['input_ids'],
-            attention_mask=inputs['attention_mask'],
-            token_type_ids= inputs.get('token_type_ids'),
-            position_ids= inputs.get('position_ids'),
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
             output_hidden_states=output_hidden_states,
             output_attentions=output_attentions,
             return_dict=True
@@ -99,13 +101,13 @@ class EmbeddingBert(BertPreTrainedModel):
         prediction_scores = self.cls(sequence_output)
 
         loss = None
-        if 'labels' in inputs:
+        if labels is not None:
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
 
-            active_loss = inputs['labels'].view(-1) != -100
+            active_loss = labels.view(-1) != -100
             if active_loss.any():
                 active_logits = prediction_scores.view(-1, self.config.vocab_size)[active_loss]
-                active_labels = inputs['labels'].view(-1)[active_loss]
+                active_labels = labels.view(-1)[active_loss]
                 loss = loss_fct(active_logits, active_labels)
             else:
                 loss = torch.tensor(0.0, device=self.device)
@@ -124,27 +126,21 @@ class EmbeddingBert(BertPreTrainedModel):
 class BertEmbeddingHead(nn.Module):
     """BERT embedding prediction head with proper initialization."""
 
-    def __init__(self, config: BertConfig):
-        """
-        Initialize embedding prediction head.
-        """
+    def __init__(self, config: BertConfig) -> None:
+        """Initialize embedding prediction head."""
         super().__init__()
         self.predictions = BertLMPredictionHead(config)
 
-    def forward(self, sequence_output: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass.
-        """
-        prediction_scores = self.predictions(sequence_output)
-        return prediction_scores
+    @log_function()
+    def forward(self, sequence_output: Tensor) -> Tensor:
+        """Forward pass through the head."""
+        return self.predictions(sequence_output)
 
 class BertLMPredictionHead(nn.Module):
     """BERT language model prediction head."""
 
-    def __init__(self, config: BertConfig):
-        """
-        Initialize prediction head.
-        """
+    def __init__(self, config: BertConfig) -> None:
+        """Initialize prediction head."""
         super().__init__()
         self.transform = BertPredictionHeadTransform(config)
 
@@ -152,44 +148,36 @@ class BertLMPredictionHead(nn.Module):
         self.bias = nn.Parameter(torch.zeros(config.vocab_size))
         self.decoder.bias = self.bias
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass.
-        """
+    @log_function()
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        """Forward pass through the prediction head."""
         hidden_states = self.transform(hidden_states)
-        hidden_states = self.decoder(hidden_states)
-        return hidden_states
+        return self.decoder(hidden_states)
 
 class BertPredictionHeadTransform(nn.Module):
     """BERT prediction head transform."""
 
-    def __init__(self, config: BertConfig):
-        """
-        Initialize transform layer.
-        """
+    def __init__(self, config: BertConfig) -> None:
+        """Initialize transform layer."""
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-
-        if isinstance(config.hidden_act, str):
-            self.transform_act_fn = nn.GELU()
-        else:
-            self.transform_act_fn = config.hidden_act
-
+        self.transform_act_fn = nn.GELU()
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass.
-        """
+    @log_function()
+    def forward(self, hidden_states: Tensor) -> Tensor:
+        """Forward pass through the transform."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.transform_act_fn(hidden_states)
         hidden_states = self.LayerNorm(hidden_states)
         return hidden_states
 
-def embedding_model_factory(config: Dict[str, Any], trial: Optional[optuna.Trial] = None) -> EmbeddingBert:
-    """
-    Factory function for creating an EmbeddingBert model.
-    """
+@log_function()
+def embedding_model_factory(
+    config: Dict[str, Any],
+    trial: Optional[optuna.Trial] = None
+) -> EmbeddingBert:
+    """Factory function for creating an EmbeddingBert model."""
     model_config = BertConfig.from_pretrained(config['model']['name'])
 
     if trial:
@@ -207,6 +195,17 @@ def embedding_model_factory(config: Dict[str, Any], trial: Optional[optuna.Trial
         model_config.hidden_dropout_prob = config['model']['hidden_dropout_prob']
         model_config.attention_probs_dropout_prob = config['model']['attention_probs_dropout_prob']
 
+    log_config = LogConfig(level=config['training'].get('log_level', 'log'))
 
-    model = EmbeddingBert(config=model_config, tie_weights= config['model']['tie_weights'])
-    return model
+    model = EmbeddingBert(
+        config=model_config,
+        tie_weights=config['model']['tie_weights'],
+        log_config=log_config
+    )
+    return cast(EmbeddingBert, model)
+
+__all__ = [
+    'EmbeddingBert',
+    'EmbeddingModelConfig',
+    'embedding_model_factory',
+]

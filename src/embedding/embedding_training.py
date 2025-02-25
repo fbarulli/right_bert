@@ -1,36 +1,54 @@
+"""
+Main training script for embedding learning with trial management.
+"""
+from src.embedding.imports import (
+    torch,
+    Path,
+    Dict, Any, Optional,
+    PreTrainedModel,
+    DataLoader, Dataset,
+    logger,
+    log_function,
+    LogConfig,
+    create_progress_bar,
+    WandbManager,
+    optuna,
+)
 
-# src/embedding/embedding_training.py
-#src/embedding/embedding_training.py
-from __future__ import annotations
-
-import logging
-from typing import Dict, Any, Optional, List
-import torch
-from pathlib import Path
-from torch.utils.data import DataLoader, Dataset
-
-# Corrected: Use absolute import
-from src.common import get_wandb_manager
-
-logger = logging.getLogger(__name__)
-
+@log_function()
 def train_embeddings(
-    model: torch.nn.Module,
+    model: PreTrainedModel,
     train_loader: DataLoader,
     val_loader: DataLoader,
     config: Dict[str, Any],
     metrics_dir: Optional[str] = None,
     is_trial: bool = False,
     trial: Optional['optuna.Trial'] = None,
-    wandb_manager: Optional['WandbManager'] = None,  # Corrected type
+    wandb_manager: Optional[WandbManager] = None,
     job_id: Optional[int] = None,
     train_dataset: Optional[Dataset] = None,
     val_dataset: Optional[Dataset] = None
 ) -> None:
-    """Train embedding model with masked language modeling."""
+    """
+    Train embedding model with masked language modeling.
+    
+    Args:
+        model: The pre-trained model to train
+        train_loader: Training data loader
+        val_loader: Validation data loader
+        config: Training configuration
+        metrics_dir: Optional directory for saving metrics
+        is_trial: Whether this is an Optuna trial
+        trial: Optional Optuna trial object
+        wandb_manager: Optional WandB manager for logging
+        job_id: Optional job ID for distributed training
+        train_dataset: Training dataset (for cleanup)
+        val_dataset: Validation dataset (for cleanup)
+    """
     try:
-        from src.embedding.embedding_trainer import EmbeddingTrainer  # Corrected import
+        from src.embedding.embedding_trainer import EmbeddingTrainer
 
+        # Create trainer instance with trial info
         trainer = EmbeddingTrainer(
             model=model,
             train_loader=train_loader,
@@ -46,41 +64,58 @@ def train_embeddings(
         )
 
         num_epochs = config['training']['num_epochs']
-        trainer.train(num_epochs)
-
-        if trial:
-            try:
-                from src.common.study.trial_analyzer import TrialAnalyzer # Corrected import
-                metrics_path = Path(metrics_dir) if metrics_dir else Path.cwd() / 'metrics'
+        
+        try:
+            trainer.train(num_epochs)
+            
+            # Handle trial completion metrics
+            if trial and metrics_dir:
+                metrics_path = Path(metrics_dir)
                 metrics_path.mkdir(parents=True, exist_ok=True)
-                analyzer = TrialAnalyzer(metrics_path)
-                analyzer.plot_trial_curves([trial], "Embedding Training")
-            except Exception as e:
-                logger.warning(f"Failed to plot trial metrics: {str(e)}")
-
-        trainer.cleanup_memory(aggressive=True)
+                
+                try:
+                    from src.common.study.trial_analyzer import TrialAnalyzer
+                    analyzer = TrialAnalyzer(metrics_path)
+                    analyzer.plot_trial_curves([trial], "Embedding Training")
+                except Exception as e:
+                    logger.warning(f"Failed to plot trial metrics: {str(e)}")
+                    
+        except optuna.exceptions.TrialPruned:
+            # Trial was pruned - cleanup will be handled by trainer
+            raise
+            
+        except Exception as e:
+            logger.error(f"Error in embedding training: {str(e)}")
+            raise
+            
+        finally:
+            # Let the trainer handle its own cleanup
+            # It will know whether this is a trial and clean up accordingly
+            pass
 
     except Exception as e:
-        logger.error(f"Error in embedding training: {str(e)}")
+        logger.error(f"Fatal error in embedding training: {str(e)}")
         raise
 
 def validate_embeddings(
     model_path: str,
     tokenizer_name: str,
     output_dir: str,
-    words_to_check: Optional[List[str]] = None,  # Provide a default
-    top_k: int = 10
-):
-    if words_to_check is None:
-        words_to_check = []
+    device: Optional[torch.device] = None
+) -> None:
     """
-    Validates the quality of trained embeddings using nearest neighbors and t-SNE.
-
+    Validates the quality of trained embeddings.
+    
     Args:
-        model_path: Path to the directory containing the saved model.
-        tokenizer_name: Name/path of the tokenizer.
-        output_dir: Where to save visualization plots.
-        words_to_check: Optional list of words to find nearest neighbors for.
-        top_k: Number of nearest neighbors to retrieve.
+        model_path: Path to the saved model
+        tokenizer_name: Name/path of tokenizer
+        output_dir: Directory for validation outputs
+        device: Optional torch device
     """
+    # Validation logic here
     pass
+
+__all__ = [
+    'train_embeddings',
+    'validate_embeddings',
+]

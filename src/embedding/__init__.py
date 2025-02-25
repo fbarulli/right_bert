@@ -1,28 +1,72 @@
+"""
+Embedding module for learning token embeddings through masked language modeling.
 
-# src/embedding/__init__.py
-#src/embedding/__init__.py (CORRECTED)
-"""Embedding module for BERT model training."""
-from src.embedding.model import EmbeddingBert
-from src.embedding.embedding_trainer import EmbeddingTrainer
-from src.embedding.embedding_training import train_embeddings, validate_embeddings
-from src.embedding.dataset import EmbeddingDataset
+This module provides:
+- Dataset handling for embedding tasks
+- Masking strategies
+- Loss functions
+- Model definitions
+- Training utilities
+"""
+
+from src.embedding.model import (
+    EmbeddingBert,
+    EmbeddingModelConfig,
+    embedding_model_factory,
+)
+
+from src.embedding.losses import (
+    InfoNCELoss,
+    InfoNCEConfig,
+    info_nce_loss_factory,
+)
+
 from src.embedding.masking import (
     MaskingModule,
+    MaskingConfig,
     WholeWordMaskingModule,
-    SpanMaskingModule
+    SpanMaskingModule,
+    create_attention_mask,
 )
-from src.embedding.losses import InfoNCELoss, info_nce_loss_factory
+
+from src.embedding.dataset import (
+    EmbeddingDataset,
+    EmbeddingDatasetConfig,
+)
+
+from src.embedding.embedding_trainer import (
+    EmbeddingTrainer,
+    EmbeddingTrainerConfig,
+)
+
+from src.embedding.embedding_training import (
+    train_embeddings,
+)
 
 __all__ = [
+    # Models
     'EmbeddingBert',
-    'EmbeddingTrainer',
-    'train_embeddings',
-    'validate_embeddings',
-    'EmbeddingDataset',
+    'EmbeddingModelConfig',
+    'embedding_model_factory',
+    
+    # Losses
+    'InfoNCELoss',
+    'InfoNCEConfig',
+    'info_nce_loss_factory',
+    
+    # Masking
     'MaskingModule',
+    'MaskingConfig',
     'WholeWordMaskingModule',
     'SpanMaskingModule',
-    'InfoNCELoss',
-    'info_nce_loss_factory',
-    'validate_embeddings'
+    'create_attention_mask',
+    
+    # Dataset
+    'EmbeddingDataset',
+    'EmbeddingDatasetConfig',
+    
+    # Training
+    'EmbeddingTrainer',
+    'EmbeddingTrainerConfig',
+    'train_embeddings',
 ]
