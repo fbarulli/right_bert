@@ -1,5 +1,11 @@
 # config_embedding.yaml
 
+# Logging configuration
+logging:
+  level: "INFO"
+  file: null
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
 # Top-level sections
 training:
   seed: 42
