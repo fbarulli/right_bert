@@ -31,7 +31,7 @@ class ManagerContainer(containers.DeclarativeContainer):
     cuda_manager = providers.Singleton(CUDAManager, config=config)
     directory_manager = providers.Singleton(
         DirectoryManager,
-        base_dir=lambda: Path(config['output']['dir']),  # From config
+        base_dir=config['output']['dir'],  # String, not lambda
         config=config
     )
 
@@ -75,6 +75,10 @@ class ManagerContainer(containers.DeclarativeContainer):
     )
 
 _container = None
+
+
+
+
 def initialize_factory(config: Dict[str, Any]) -> None:
     """
     Initialize the manager factory with the given configuration.

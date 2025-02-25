@@ -23,9 +23,9 @@ class AMPManager(BaseManager):
             cuda_manager: Injected CUDAManager instance
             config: Optional configuration dictionary
         """
-        super().__init__(config)  # Pass config to BaseManager
-        self._cuda_manager = cuda_manager  # Store injected cuda_manager
-        self._initialize_process_local(config)  # Call initialization here
+        super().__init__(config)
+        self._cuda_manager = cuda_manager  # Set the injected cuda_manager
+        self._initialize_process_local(config)
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -43,7 +43,7 @@ class AMPManager(BaseManager):
 
             if self._cuda_manager.is_available():
                 training_config = self.get_config_section(effective_config, 'training')
-                if training_config.get('fp16', False):  # Default to False if not specified
+                if training_config.get('fp16', False):
                     import torch.cuda.amp
                     self._local.scaler = torch.cuda.amp.GradScaler()
                     logger.info(f"Initialized GradScaler for process {self._local.pid}")
