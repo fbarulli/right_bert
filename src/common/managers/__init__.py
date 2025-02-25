@@ -1,5 +1,3 @@
-from __future__ import annotations
-import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dependency_injector import containers, providers
@@ -21,21 +19,16 @@ from src.common.managers.storage_manager import StorageManager
 from src.common.managers.resource_manager import ProcessResourceManager
 from src.common.managers.worker_manager import WorkerManager
 
-logger = logging.getLogger(__name__)
-
 class ManagerContainer(containers.DeclarativeContainer):
     """Dependency injection container for managers."""
     config = providers.Configuration()
 
-    # Core managers with minimal dependencies
     cuda_manager = providers.Singleton(CUDAManager, config=config)
     directory_manager = providers.Singleton(
         DirectoryManager,
-        base_dir=config['output']['dir'],  # String, not lambda
+        base_dir=config.output.dir,  # Use dot notation for Configuration
         config=config
     )
-
-    # Managers with potential dependencies
     data_manager = providers.Singleton(DataManager, config=config)
     model_manager = providers.Singleton(ModelManager, config=config)
     tokenizer_manager = providers.Singleton(TokenizerManager, config=config)
@@ -46,8 +39,6 @@ class ManagerContainer(containers.DeclarativeContainer):
     metrics_manager = providers.Singleton(MetricsManager, config=config)
     dataloader_manager = providers.Singleton(DataLoaderManager, config=config)
     resource_manager = providers.Singleton(ProcessResourceManager, config=config)
-
-    # Managers with known dependencies
     amp_manager = providers.Singleton(
         AMPManager,
         cuda_manager=cuda_manager,
@@ -71,7 +62,7 @@ class ManagerContainer(containers.DeclarativeContainer):
         tokenizer_manager=tokenizer_manager,
         config=config,
         study_name="embedding_study",
-        storage_url=lambda: f"sqlite:///{Path(config['output']['dir']) / 'storage' / 'optuna.db'}?timeout=60"
+        storage_url=lambda: f"sqlite:///{Path(config.output.dir) / 'storage' / 'optuna.db'}?timeout=60"  # Update this too
     )
 
 _container = None
