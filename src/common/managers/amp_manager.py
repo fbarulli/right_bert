@@ -18,7 +18,7 @@ class AMPManager(BaseManager):
     def __init__(self, cuda_manager: CUDAManager, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
         self._cuda_manager = cuda_manager  # Critical line
-        self._initialize_process_local(config)
+        #self._initialize_process_local(config)
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         try:

@@ -43,8 +43,8 @@ class DirectoryManager(BaseManager):
             raise ValueError("base_dir cannot be None")
 
         self.base_dir = Path(base_dir)
+        self._local.initialized_dirs = set()  # Move this before super()
         super().__init__(config)
-        self._local.initialized_dirs = set()
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
