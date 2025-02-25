@@ -17,7 +17,7 @@ from src.common.managers.batch_manager import BatchManager
 from src.common.managers.metrics_manager import MetricsManager
 from src.common.managers.dataloader_manager import DataLoaderManager
 from src.common.managers.storage_manager import StorageManager
-from src.common.managers.resource_manager import ResourceManager
+from src.common.managers.resource_manager import ProcessResourceManager
 from src.common.managers.worker_manager import WorkerManager
 
 logger = logging.getLogger(__name__)
@@ -40,8 +40,8 @@ class ManagerContainer(containers.DeclarativeContainer):
     metrics_manager = providers.Singleton(MetricsManager, config=config)
     dataloader_manager = providers.Singleton(DataLoaderManager, config=config)
     storage_manager = providers.Singleton(StorageManager, config=config)
-    resource_manager = providers.Singleton(ResourceManager, config=config)
-    worker_manager = providers.Singleton(WorkerManager, config=config)
+    resource_manager = providers.Singleton(ProcessResourceManager, config=config)
+    worker_manager = WorkerManager()
 
 _container = None
 
@@ -105,7 +105,7 @@ def get_dataloader_manager() -> DataLoaderManager:
 def get_storage_manager() -> StorageManager:
     return get_factory().storage_manager()
 
-def get_resource_manager() -> ResourceManager:
+def get_resource_manager() -> ProcessResourceManager:
     return get_factory().resource_manager()
 
 def get_worker_manager() -> WorkerManager:
