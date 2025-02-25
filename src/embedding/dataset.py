@@ -1,23 +1,12 @@
 """
 Dataset implementation for embedding learning with masking functionality.
 """
-from src.embedding.imports import (
-    os,
-    Path,
-    Dict, Any,
-    PreTrainedTokenizerFast,
-    dataclass,
-    CSVDataset,
-    Tensor,
-    logger,
-    log_function,
-    LogConfig,
-    TensorPool,
-    MemoryTracker,
-    CachingDict,
-)
-
+from dataclasses import dataclass  # Added direct import
+from pathlib import Path  # Add this import
+from typing import Dict, Any  # Add this import
+from torch import Tensor  # Add this import
 from src.embedding.masking import SpanMaskingModule, MaskingConfig
+from src.common.logging_utils import log_function  # Add this import
 
 @dataclass
 class EmbeddingDatasetConfig:
@@ -53,12 +42,12 @@ class EmbeddingDatasetConfig:
         if self.log_level not in ['debug', 'log', 'none']:
             raise ValueError(f"Invalid log level: {self.log_level}")
 
-class EmbeddingDataset(CSVDataset):
+class EmbeddingDataset:
     """Dataset for learning embeddings through masked token prediction."""
 
     def __init__(
         self,
-        tokenizer: PreTrainedTokenizerFast,
+        tokenizer,  # Type hint removed due to lazy import
         config: EmbeddingDatasetConfig
     ) -> None:
         """
@@ -68,6 +57,25 @@ class EmbeddingDataset(CSVDataset):
             tokenizer: The Hugging Face tokenizer
             config: Dataset configuration
         """
+        from src.embedding.imports import (
+            os,
+            Path,
+            Dict,
+            PreTrainedTokenizerFast,
+            CSVDataset,
+            Tensor,
+            logger,
+            LogConfig,
+            TensorPool,
+            MemoryTracker,
+            CachingDict,
+            log_function,
+        )
+
+        # Validate tokenizer type at runtime
+        if not isinstance(tokenizer, PreTrainedTokenizerFast):
+            raise TypeError("Tokenizer must be a PreTrainedTokenizerFast instance")
+
         super().__init__(
             data_path=config.data_path,
             tokenizer=tokenizer,
@@ -100,7 +108,7 @@ class EmbeddingDataset(CSVDataset):
 
         # Initialize masking module
         self.masking_module = SpanMaskingModule(
-            tokenizer=self.tokenizer,
+            tokenizer=tokenizer,
             config=masking_config
         )
 
@@ -236,7 +244,7 @@ class EmbeddingDataset(CSVDataset):
     def from_config(
         cls,
         config: Dict[str, Any],
-        tokenizer: PreTrainedTokenizerFast,
+        tokenizer,  # Type hint removed due to lazy import
         split: str
     ) -> 'EmbeddingDataset':
         """
@@ -250,6 +258,8 @@ class EmbeddingDataset(CSVDataset):
         Returns:
             Initialized dataset
         """
+        from src.embedding.imports import Path  # Minimal import for Path
+
         dataset_config = EmbeddingDatasetConfig(
             data_path=Path(config['data']['csv_path']),
             max_length=config['data']['max_length'],

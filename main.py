@@ -1,5 +1,3 @@
-
-# main.py
 # main.py
 import logging
 import os
@@ -22,7 +20,7 @@ from src.common import (
     get_shared_tokenizer,
     set_shared_tokenizer,
     get_amp_manager,
-    get_cuda_manager,
+    get_cuda_manager,  # This should already work with src/common/managers/__init__.py
     get_tensor_manager,
     get_batch_manager,
     get_metrics_manager,
@@ -33,11 +31,11 @@ from src.common import (
 )
 from src.embedding.model import embedding_model_factory
 from src.embedding.embedding_training import train_embeddings
-
+from src.common.managers.cuda_manager import CUDAManager  # Add this if you need direct access
 
 logger = logging.getLogger(__name__)
 
-def train_model(wandb_manager = None) -> None:
+def train_model(wandb_manager=None) -> None:
     """Train the model using managers from the factory."""
     try:
         from src.common.config_utils import load_yaml_config
@@ -60,7 +58,6 @@ def train_model(wandb_manager = None) -> None:
         model_manager = get_model_manager()
         tokenizer_manager = get_tokenizer_manager()
         directory_manager = get_directory_manager()
-
 
         # Setup CUDA
         cuda_manager.setup(config)
@@ -92,10 +89,6 @@ def train_model(wandb_manager = None) -> None:
                 train_dataset=train_dataset,
                 val_dataset=val_dataset
             )
-
-        elif config['model']['stage'] == 'classification':
-            logger.info("\n=== Starting Classification Training ===")
-            pass
 
         else:
             raise ValueError(f"Unknown training stage: {config['model']['stage']}")
@@ -164,15 +157,14 @@ def validate_config(config: Dict[str, Any]) -> bool:
         logger.error(f"Traceback:\n{traceback.format_exc()}")
         return False
 
-def main():
+def main(config_file="config/embedding_config.yaml"):
     try:
         from src.common.config_utils import load_yaml_config
         logger.info(f"Main Process ID: {os.getpid()}")
 
-
         # Load and validate configuration
-        logger.info("Loading configuration...")
-        config = load_yaml_config("config/embedding_config.yaml")
+        logger.info(f"Loading configuration from {config_file}...")
+        config = load_yaml_config(config_file)
         if not config:
             logger.error("Failed to load configuration. Exiting.")
             return
@@ -183,7 +175,6 @@ def main():
 
         # Initialize manager factory
         from src.common.managers import initialize_factory
-        config = load_yaml_config("config/embedding_config.yaml")
         initialize_factory(config)
 
         # Setup logging after config is loaded and validated

@@ -128,7 +128,7 @@ class DataManager(BaseManager):
                     max_span_length=data_config['max_span_length']
                 )
             elif config['model']['stage'] == 'classification':
-                from src.classification.dataset import ClassificationDataset
+                from src.classification.dataset import ClassificationDataset  # Conditional import
                 dataset = ClassificationDataset(
                     data_path=Path(data_config['csv_path']),
                     tokenizer=tokenizer,

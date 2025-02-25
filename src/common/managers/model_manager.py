@@ -14,8 +14,8 @@ from transformers.utils.hub import HFValidationError
 from src.common.managers.base_manager import BaseManager
 from src.common.managers.cuda_manager import CUDAManager
 from src.common.managers.tokenizer_manager import TokenizerManager
-from src.embedding.model import get_embedding_model
-from src.classification.model import get_classification_model
+#from src.embedding.model import get_embedding_model
+#from src.classification.model import get_classification_model
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,11 @@ def get_embedding_model():
 
 def get_classification_model():
     """Get ClassificationBert model at runtime to avoid circular imports."""
-    from src.classification.model import ClassificationBert
-    return ClassificationBert
+    if config['model']['stage'] == 'classification':
+        from src.classification.model import ClassificationBert
+        return ClassificationBert
+    else:
+        raise ValueError("Classification model not needed for this stage")
 
 class ModelManager(BaseManager):
     """

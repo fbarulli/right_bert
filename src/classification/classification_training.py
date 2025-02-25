@@ -1,4 +1,3 @@
-
 # classification_training.py
 # src/classification/classification_training.py
 from __future__ import annotations
@@ -27,16 +26,17 @@ from src.common.managers import (
 )
 
 from src.common.utils import seed_everything, create_optimizer, create_scheduler
-from src.classification.classification_trainer import ClassificationTrainer
 from src.common.utils import load_yaml_config
-from src.classification.model import get_classification_model
 
 
 logger = logging.getLogger(__name__)
 
 def get_classification_model():
-    from src.classification.model import ClassificationBert
-    return ClassificationBert
+    if config['model']['stage'] == 'classification':
+        from src.classification.model import ClassificationBert
+        return ClassificationBert
+    else:
+        raise ValueError("Classification model not needed for this stage")
 
 def run_classification_optimization(embedding_model_path: str, config_path: str, study_name: Optional[str] = None) -> Dict[str, Any]:
     config = load_yaml_config(config_path)
@@ -78,10 +78,13 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
                 model_name=embedding_model_path,
                 model_type='classification'
             )
-            local_vars['model'] = get_classification_model()(
-                config=trial_config,
-                num_labels=trial_config['model']['num_labels']
-            )
+            if config['model']['stage'] == 'classification':
+                local_vars['model'] = get_classification_model()(
+                    config=trial_config,
+                    num_labels=trial_config['model']['num_labels']
+                )
+            else:
+                local_vars['model'] = None
 
             train_dataset, val_dataset = data_manager.create_datasets(
                 trial_config,
@@ -102,21 +105,28 @@ def run_classification_optimization(embedding_model_path: str, config_path: str,
             metrics_dir = trial_output_dir / "metrics"
             metrics_dir.mkdir(parents=True, exist_ok=True)
 
-            local_vars['trainer'] = ClassificationTrainer(
-                model=local_vars['model'],
-                train_loader=local_vars['train_loader'],
-                val_loader=local_vars['val_loader'],
-                config=trial_config,
-                metrics_dir= metrics_dir,
-                optimizer=local_vars['optimizer'],
-                scheduler=local_vars['scheduler'],
-                is_trial=True,
-                trial=trial,
-                wandb_manager= wandb_manager,
-                job_id=trial.number,
-                train_dataset=train_dataset,
-                val_dataset=val_dataset
-            )
+            if config['model']['stage'] == 'classification':
+                try:
+                    from src.classification.classification_trainer import ClassificationTrainer
+                    local_vars['trainer'] = ClassificationTrainer(
+                        model=local_vars['model'],
+                        train_loader=local_vars['train_loader'],
+                        val_loader=local_vars['val_loader'],
+                        config=trial_config,
+                        metrics_dir= metrics_dir,
+                        optimizer=local_vars['optimizer'],
+                        scheduler=local_vars['scheduler'],
+                        is_trial=True,
+                        trial=trial,
+                        wandb_manager= wandb_manager,
+                        job_id=trial.number,
+                        train_dataset=train_dataset,
+                        val_dataset=val_dataset
+                    )
+                except ImportError:
+                    local_vars['trainer'] = None
+            else:
+                local_vars['trainer'] = None
 
             try:
                 local_vars['trainer'].train(int(trial_config['training']['num_epochs']))
@@ -203,10 +213,17 @@ def train_final_model(embedding_model_path: str, best_params: Dict[str, Any], co
         train_dataset,
         val_dataset
     )
-
-    model = get_classification_model()(config=config, num_labels=config['model']['num_labels'])
-    optimizer = create_optimizer(model, config['training'])
-    scheduler = create_scheduler(optimizer, len(train_loader.dataset), config['training'])
+    model = None
+    optimizer = None
+    scheduler = None
+    if config['model']['stage'] == 'classification':
+        model = get_classification_model()(config=config, num_labels=config['model']['num_labels'])
+        try:
+            from src.classification.classification_trainer import ClassificationTrainer
+        except ImportError:
+            ClassificationTrainer = None
+        optimizer = create_optimizer(model, config['training'])
+        scheduler = create_scheduler(optimizer, len(train_loader.dataset), config['training'])
 
     wandb_manager.init_final_training()
     trainer = ClassificationTrainer(

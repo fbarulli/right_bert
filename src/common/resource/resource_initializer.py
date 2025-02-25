@@ -1,24 +1,8 @@
-
 # src/common/resource/resource_initializer.py
 from __future__ import annotations
 import logging
 import traceback
 from typing import Dict, Any, Optional, List
-
-from src.common.managers.cuda_manager import CUDAManager
-from src.common.managers.amp_manager import AMPManager
-from src.common.managers.data_manager import DataManager
-from src.common.managers.dataloader_manager import DataLoaderManager
-from src.common.managers.tensor_manager import TensorManager
-from src.common.managers.tokenizer_manager import TokenizerManager
-from src.common.managers.model_manager import ModelManager
-from src.common.managers.metrics_manager import MetricsManager
-from src.common.managers.parameter_manager import ParameterManager
-from src.common.managers.storage_manager import StorageManager
-from src.common.managers.directory_manager import DirectoryManager
-from src.common.managers.worker_manager import WorkerManager
-from src.common.managers.wandb_manager import WandbManager
-from src.common.managers.optuna_manager import OptunaManager
 
 logger = logging.getLogger(__name__)
 
@@ -37,20 +21,20 @@ class ResourceInitializer:
 
     def __init__(
         self,
-        cuda_manager: CUDAManager,
-        amp_manager: AMPManager,
-        data_manager: DataManager,
-        dataloader_manager: DataLoaderManager,
-        tensor_manager: TensorManager,
-        tokenizer_manager: TokenizerManager,
-        model_manager: ModelManager,
-        metrics_manager: MetricsManager,
-        parameter_manager: ParameterManager,
-        storage_manager: StorageManager,
-        directory_manager: DirectoryManager,
-        worker_manager: WorkerManager,
-        wandb_manager: Optional[WandbManager],
-        optuna_manager: Optional[OptunaManager]
+        cuda_manager=None,  # Type hints removed, will be imported lazily
+        amp_manager=None,
+        data_manager=None,
+        dataloader_manager=None,
+        tensor_manager=None,
+        tokenizer_manager=None,
+        model_manager=None,
+        metrics_manager=None,
+        parameter_manager=None,
+        storage_manager=None,
+        directory_manager=None,
+        worker_manager=None,
+        wandb_manager=None,
+        optuna_manager=None
     ):
         """
         Initialize ResourceInitializer with dependency injection.
@@ -71,7 +55,7 @@ class ResourceInitializer:
             wandb_manager: Optional injected WandbManager instance
             optuna_manager: Optional injected OptunaManager instance
         """
-        # Store injected managers
+        # Store injected managers (or None if not provided)
         self._cuda_manager = cuda_manager
         self._amp_manager = amp_manager
         self._data_manager = data_manager
@@ -87,25 +71,8 @@ class ResourceInitializer:
         self._wandb_manager = wandb_manager
         self._optuna_manager = optuna_manager
 
-        # Store initialization order
-        self._initialization_order = [
-            ('CUDA', self._cuda_manager),
-            ('AMP', self._amp_manager),
-            ('Data', self._data_manager),
-            ('DataLoader', self._dataloader_manager),
-            ('Tensor', self._tensor_manager),
-            ('Tokenizer', self._tokenizer_manager),
-            ('Model', self._model_manager),
-            ('Metrics', self._metrics_manager),
-            ('Parameter', self._parameter_manager),
-            ('Directory', self._directory_manager),
-            ('Storage', self._storage_manager)
-        ]
-        if self._wandb_manager:
-            self._initialization_order.append(('WandB', self._wandb_manager))
-        if self._optuna_manager:
-            self._initialization_order.append(('Optuna', self._optuna_manager))
-        self._initialization_order.append(('Worker', self._worker_manager))
+        # Store initialization order (will populate lazily in initialize_process)
+        self._initialization_order = []
 
     def initialize_process(self, config: Dict[str, Any]) -> None:
         """
@@ -118,8 +85,60 @@ class ResourceInitializer:
             RuntimeError: If initialization fails
         """
         try:
+            # Lazy imports to avoid circular dependency
+            from src.common.managers.cuda_manager import CUDAManager
+            from src.common.managers.amp_manager import AMPManager
+            from src.common.managers.data_manager import DataManager
+            from src.common.managers.dataloader_manager import DataLoaderManager
+            from src.common.managers.tensor_manager import TensorManager
+            from src.common.managers.tokenizer_manager import TokenizerManager
+            from src.common.managers.model_manager import ModelManager
+            from src.common.managers.metrics_manager import MetricsManager
+            from src.common.managers.parameter_manager import ParameterManager
+            from src.common.managers.storage_manager import StorageManager
+            from src.common.managers.directory_manager import DirectoryManager
+            from src.common.managers.worker_manager import WorkerManager
+            from src.common.managers.wandb_manager import WandbManager
+            from src.common.managers.optuna_manager import OptunaManager
+
             # Store config at class level for worker access
             ResourceInitializer._config = config
+
+            # Populate managers if not injected
+            self._cuda_manager = self._cuda_manager or CUDAManager()
+            self._amp_manager = self._amp_manager or AMPManager()
+            self._data_manager = self._data_manager or DataManager()
+            self._dataloader_manager = self._dataloader_manager or DataLoaderManager()
+            self._tensor_manager = self._tensor_manager or TensorManager()
+            self._tokenizer_manager = self._tokenizer_manager or TokenizerManager()
+            self._model_manager = self._model_manager or ModelManager()
+            self._metrics_manager = self._metrics_manager or MetricsManager()
+            self._parameter_manager = self._parameter_manager or ParameterManager()
+            self._storage_manager = self._storage_manager or StorageManager()
+            self._directory_manager = self._directory_manager or DirectoryManager()
+            self._worker_manager = self._worker_manager or WorkerManager()
+            self._wandb_manager = self._wandb_manager or (WandbManager() if config.get('wandb') else None)
+            self._optuna_manager = self._optuna_manager or (OptunaManager() if config.get('optuna') else None)
+
+            # Define initialization order
+            self._initialization_order = [
+                ('CUDA', self._cuda_manager),
+                ('AMP', self._amp_manager),
+                ('Data', self._data_manager),
+                ('DataLoader', self._dataloader_manager),
+                ('Tensor', self._tensor_manager),
+                ('Tokenizer', self._tokenizer_manager),
+                ('Model', self._model_manager),
+                ('Metrics', self._metrics_manager),
+                ('Parameter', self._parameter_manager),
+                ('Directory', self._directory_manager),
+                ('Storage', self._storage_manager)
+            ]
+            if self._wandb_manager:
+                self._initialization_order.append(('WandB', self._wandb_manager))
+            if self._optuna_manager:
+                self._initialization_order.append(('Optuna', self._optuna_manager))
+            self._initialization_order.append(('Worker', self._worker_manager))
 
             # Initialize managers in order
             for name, manager in self._initialization_order:
@@ -146,6 +165,15 @@ class ResourceInitializer:
         """Clean up process-local resources."""
         cleanup_errors: List[str] = []
 
+        # Lazy imports for cleanup (if needed beyond initialization)
+        from src.common.managers.storage_manager import StorageManager
+        from src.common.managers.directory_manager import DirectoryManager
+        from src.common.managers.model_manager import ModelManager
+        from src.common.managers.tokenizer_manager import TokenizerManager
+        from src.common.managers.tensor_manager import TensorManager
+        from src.common.managers.worker_manager import WorkerManager
+        from src.common.managers.wandb_manager import WandbManager
+
         # Clean up in reverse order
         for name, manager in reversed(self._initialization_order):
             try:
@@ -154,8 +182,8 @@ class ResourceInitializer:
                     manager.cleanup()
                 elif name == 'Worker':
                     self._worker_manager.cleanup_workers()
-                elif name == 'WandB':
-                    self._wandb_manager.finish()  # type: ignore
+                elif name == 'WandB' and self._wandb_manager:
+                    self._wandb_manager.finish()
                 elif name == 'Storage':
                     self._storage_manager.cleanup()
                 elif name == 'Directory':
@@ -180,6 +208,5 @@ class ResourceInitializer:
             )
         else:
             logger.info("Process resources cleaned up successfully")
-
 
 __all__ = ['ResourceInitializer']

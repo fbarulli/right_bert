@@ -1,7 +1,5 @@
-
 # src/common/process/__init__.py
-# src/common/process/__init__.py
-from src.common.process.process_init import (
+from src.common.process.initialization import (
     initialize_process,
     cleanup_process,
     get_worker_init_fn,
@@ -16,7 +14,6 @@ from src.common.process.process_utils import (
     set_process_priority
 )
 from src.common.process.multiprocessing_setup import setup_multiprocessing, verify_spawn_method
-
 
 __all__ = [
     # Process Initialization

@@ -12,8 +12,6 @@ from torch.utils.data import Dataset, DataLoader
 from src.common.managers.dataloader_manager import DataLoaderManager
 from src.data.csv_dataset import csv_dataset_factory
 from src.embedding.dataset import EmbeddingDataset
-from src.classification.dataset import ClassificationDataset
-
 logger = logging.getLogger(__name__)
 
 class ResourceFactory:
@@ -123,6 +121,7 @@ class ResourceFactory:
                     max_span_length=config['data']['max_span_length']
                 )
             elif stage == 'classification':
+                from src.classification.dataset import ClassificationDataset  # Conditional import
                 return ClassificationDataset(
                     data_path=data_path,
                     tokenizer=tokenizer,

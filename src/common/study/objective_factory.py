@@ -249,12 +249,13 @@ class ObjectiveFactory:
             )
 
             # Create model
-            from src.classification.model import classification_model_factory
-            model = classification_model_factory(config, trial=trial)
+            if config['model']['stage'] == 'classification':
+                from src.classification.model import classification_model_factory
+                model = classification_model_factory(config, trial=trial)
 
-            # Create trainer
-            from src.classification.classification_trainer import ClassificationTrainer
-            trainer = ClassificationTrainer(
+                # Create trainer
+                from src.classification.classification_trainer import ClassificationTrainer
+                trainer = ClassificationTrainer(
                 cuda_manager=self._cuda_manager,
                 batch_manager=self._batch_manager,
                 amp_manager=self._amp_manager,
