@@ -51,6 +51,9 @@ try:
 except ImportError:
     optuna = None
 
+# Internal imports - Logging utilities
+from src.embedding.logging_utils import logger  # Moved logger import here
+
 # Internal imports - Common utilities
 from src.common.logging_utils import (
     log_function,
@@ -78,9 +81,6 @@ from src.common.managers.wandb_manager import WandbManager
 # Internal imports - Base classes
 from src.data.csv_dataset import CSVDataset
 from src.training.base_trainer import BaseTrainer
-
-# Setup module logger
-logger = logging.getLogger(__name__)
 
 __all__ = [
     # Standard library

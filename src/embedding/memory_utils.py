@@ -10,11 +10,12 @@ from src.embedding.imports import (
     Set,
     Any,
     Tensor,
-    logger,
+    #logger,
     log_function,
     LogConfig,
     gc,
 )
+from src.embedding.logging_utils import logger  # New import, replacing imports.py
 
 class GPUMemoryManager:
     """Manages GPU memory allocation and cleanup."""
