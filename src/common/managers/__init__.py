@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dependency_injector import containers, providers
+import logging  # Ensure this is present
 
 from src.common.managers.cuda_manager import CUDAManager
 from src.common.managers.data_manager import DataManager
@@ -18,6 +19,8 @@ from src.common.managers.dataloader_manager import DataLoaderManager
 from src.common.managers.storage_manager import StorageManager
 from src.common.managers.resource_manager import ProcessResourceManager
 from src.common.managers.worker_manager import WorkerManager
+
+logger = logging.getLogger(__name__)  # Define logger
 
 class ManagerContainer(containers.DeclarativeContainer):
     """Dependency injection container for managers."""
