@@ -21,52 +21,26 @@ from src.embedding.dataset import EmbeddingDataset
 logger = logging.getLogger(__name__)
 
 class DataManager(BaseManager):
-    """
-    Manages data resources including datasets and dataloaders.
-
-    This manager handles:
-    - Dataset creation and caching
-    - Dataloader configuration
-    - Train/validation data splitting
-    """
-
     def __init__(
         self,
         tokenizer_manager: TokenizerManager,
         dataloader_manager: DataLoaderManager,
         config: Optional[Dict[str, Any]] = None
     ):
-        """
-        Initialize DataManager.
-
-        Args:
-            tokenizer_manager: Injected TokenizerManager instance
-            dataloader_manager: Injected DataLoaderManager instance
-            config: Optional configuration dictionary
-        """
+        self._tokenizer_manager = tokenizer_manager  # Set before super()
+        self._dataloader_manager = dataloader_manager  # Set before super()
         super().__init__(config)
-        self._tokenizer_manager = tokenizer_manager
-        self._dataloader_manager = dataloader_manager
         self._shared_datasets = {}
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # Re-added here
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize process-local attributes.
-
-        Args:
-            config: Optional configuration dictionary that overrides the one from constructor
-        """
         try:
             super()._initialize_process_local(config)
-
             if not self._tokenizer_manager.is_initialized():
                 raise RuntimeError("TokenizerManager must be initialized before DataManager")
             if not self._dataloader_manager.is_initialized():
                 raise RuntimeError("DataLoaderManager must be initialized before DataManager")
-
             logger.info(f"DataManager initialized for process {self._local.pid}")
-
         except Exception as e:
             logger.error(f"Failed to initialize DataManager: {str(e)}")
             logger.error(traceback.format_exc())
@@ -229,13 +203,16 @@ class DataManager(BaseManager):
             raise
 
     def cleanup(self) -> None:
-        """Clean up data manager resources."""
-        try:
-            with self._lock:
-                self._shared_datasets.clear()
-            logger.info(f"Cleaned up DataManager for process {self._local.pid}")
-            super().cleanup()
-        except Exception as e:
-            logger.error(f"Error cleaning up DataManager: {str(e)}")
-            logger.error(traceback.format_exc())
-            raise
+            try:
+                if not hasattr(self, '_local'):
+                    logger.info("No local resources to clean up in DataManager")
+                    return
+                if hasattr(self, '_lock'):
+                    with self._lock:  # Safely use lock if it exists
+                        self._shared_datasets.clear()
+                logger.info(f"Cleaned up DataManager for process {self._local.pid}")
+                super().cleanup()
+            except Exception as e:
+                logger.error(f"Error cleaning up DataManager: {str(e)}")
+                logger.error(traceback.format_exc())
+                raise

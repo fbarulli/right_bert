@@ -45,10 +45,10 @@ class OptunaManager(BaseManager):
         """
         if not study_name:
             raise ValueError("OptunaManager requires study_name to be set")
-
-        super().__init__(config)
-        self._storage_manager = storage_manager
+        self._storage_manager = storage_manager  # Set before super()
         self.study_name = study_name
+        super().__init__(config)
+        # Initialize these after super() since self._local is set by BaseManager
         self._local.study = None
         self._local.worker_queue = None
         self._local.result_queue = None

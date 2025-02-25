@@ -16,29 +16,9 @@ from src.common.resource.resource_initializer import ResourceInitializer
 logger = logging.getLogger(__name__)
 
 class DataLoaderManager(BaseManager):
-    """
-    Process-local dataloader manager.
-
-    This manager handles:
-    - DataLoader creation and configuration
-    - Worker initialization and settings
-    - Memory pinning optimization
-    """
-
-    def __init__(
-        self,
-        cuda_manager: CUDAManager,
-        config: Optional[Dict[str, Any]] = None
-    ):
-        """
-        Initialize DataLoaderManager.
-
-        Args:
-            cuda_manager: Injected CUDAManager instance
-            config: Optional configuration dictionary
-        """
+    def __init__(self, cuda_manager: CUDAManager, config: Optional[Dict[str, Any]] = None):
+        self._cuda_manager = cuda_manager  # Set before super()
         super().__init__(config)
-        self._cuda_manager = cuda_manager
         self._local.num_workers = 0
         self._local.pin_memory = False
 
@@ -179,10 +159,20 @@ class DataLoaderManager(BaseManager):
     def cleanup(self) -> None:
         """Clean up dataloader manager resources."""
         try:
-            self._local.num_workers = 0
-            self._local.pin_memory = False
+            # Ensure _local exists before proceeding
+            if not hasattr(self, '_local'):
+                logger.info("No local resources to clean up in DataLoaderManager")
+                return
+
+            # Reset attributes if they exist
+            if hasattr(self._local, 'num_workers'):
+                self._local.num_workers = 0
+            if hasattr(self._local, 'pin_memory'):
+                self._local.pin_memory = False
+
             logger.info(f"Cleaned up DataLoaderManager for process {self._local.pid}")
             super().cleanup()
+
         except Exception as e:
             logger.error(f"Error cleaning up DataLoaderManager: {str(e)}")
             logger.error(traceback.format_exc())

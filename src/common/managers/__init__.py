@@ -33,7 +33,11 @@ class ManagerContainer(containers.DeclarativeContainer):
         config=config
     )
     tokenizer_manager = providers.Singleton(TokenizerManager, config=config)
-    dataloader_manager = providers.Singleton(DataLoaderManager, config=config)
+    dataloader_manager = providers.Singleton(
+        DataLoaderManager,
+        cuda_manager=cuda_manager,  # Inject cuda_manager
+        config=config
+    )
     data_manager = providers.Singleton(
         DataManager,
         tokenizer_manager=tokenizer_manager,  # Inject tokenizer_manager

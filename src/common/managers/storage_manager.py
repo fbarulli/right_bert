@@ -19,37 +19,9 @@ from src.common.managers.directory_manager import DirectoryManager
 logger = logging.getLogger(__name__)
 
 class StorageManager(BaseManager):
-    """
-    Manages Optuna storage and study persistence.
-
-    This manager handles:
-    - Database initialization and configuration
-    - Study creation and persistence
-    - Trial history management
-    - Directory structure for trials and profiling
-    - Resource cleanup
-    """
-
-    def __init__(
-        self,
-        directory_manager: DirectoryManager,
-        config: Optional[Dict[str, Any]] = None
-    ):
-        """
-        Initialize StorageManager.
-
-        Args:
-            directory_manager: Injected DirectoryManager instance
-            config: Optional configuration dictionary
-        """
+    def __init__(self, directory_manager: DirectoryManager, config: Optional[Dict[str, Any]] = None):
+        self._directory_manager = directory_manager  # Set before super()
         super().__init__(config)
-        self._directory_manager = directory_manager
-        self._local.storage_dir = None
-        self._local.storage_path = None
-        self._local.lock_path = None
-        self._local.history_path = None
-        self._local.trials_dir = None
-        self._local.profiler_dir = None
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -301,23 +273,28 @@ class StorageManager(BaseManager):
     def cleanup(self) -> None:
         """Clean up storage manager resources."""
         try:
-            # Clean up trials
-            if self._local.trials_dir and self._local.trials_dir.exists():
+            # Ensure _local exists before proceeding
+            if not hasattr(self, '_local'):
+                logger.info("No local resources to clean up in StorageManager")
+                return
+
+            # Clean up trials_dir
+            if hasattr(self._local, 'trials_dir') and self._local.trials_dir and self._local.trials_dir.exists():
                 shutil.rmtree(self._local.trials_dir)
                 self._local.trials_dir.mkdir(exist_ok=True)
 
-            # Clean up profiler
-            if self._local.profiler_dir and self._local.profiler_dir.exists():
+            # Clean up profiler_dir
+            if hasattr(self._local, 'profiler_dir') and self._local.profiler_dir and self._local.profiler_dir.exists():
                 shutil.rmtree(self._local.profiler_dir)
                 self._local.profiler_dir.mkdir(exist_ok=True)
 
-            # Clean up database
-            if self._local.storage_path and self._local.storage_path.exists():
+            # Clean up storage_path (database)
+            if hasattr(self._local, 'storage_path') and self._local.storage_path and self._local.storage_path.exists():
                 self._local.storage_path.unlink()
-                self._initialize_storage()
+                self._initialize_storage()  # Reinitialize after cleanup
 
-            # Clean up history
-            if self._local.history_path and self._local.history_path.exists():
+            # Clean up history_path
+            if hasattr(self._local, 'history_path') and self._local.history_path and self._local.history_path.exists():
                 self._local.history_path.unlink()
 
             logger.info(f"Cleaned up StorageManager for process {self._local.pid}")
