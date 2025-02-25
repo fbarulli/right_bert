@@ -24,34 +24,40 @@ from src.common.managers.worker_manager import WorkerManager
 logger = logging.getLogger(__name__)
 
 class ManagerContainer(containers.DeclarativeContainer):
+    """Dependency injection container for managers."""
     config = providers.Configuration()
 
+    # Core managers with minimal dependencies
     cuda_manager = providers.Singleton(CUDAManager, config=config)
+    directory_manager = providers.Singleton(
+        DirectoryManager,
+        base_dir=lambda: Path(config['output']['dir']),  # From config
+        config=config
+    )
+
+    # Managers with potential dependencies
     data_manager = providers.Singleton(DataManager, config=config)
     model_manager = providers.Singleton(ModelManager, config=config)
     tokenizer_manager = providers.Singleton(TokenizerManager, config=config)
-    directory_manager = providers.Singleton(
-    DirectoryManager,
-    base_dir=lambda: Path(config['output']['dir']),  # Use output dir from config
-    config=config
-)
     parameter_manager = providers.Singleton(ParameterManager, config=config)
     wandb_manager = providers.Singleton(WandbManager, config=config)
-    amp_manager = providers.Singleton(
-    AMPManager,
-    cuda_manager=cuda_manager,  # Add this dependency
-    config=config)
-
     tensor_manager = providers.Singleton(TensorManager, config=config)
     batch_manager = providers.Singleton(BatchManager, config=config)
     metrics_manager = providers.Singleton(MetricsManager, config=config)
     dataloader_manager = providers.Singleton(DataLoaderManager, config=config)
-    storage_manager = providers.Singleton(
-        StorageManager,
-        directory_manager=directory_manager,  # Add this dependency
+    resource_manager = providers.Singleton(ProcessResourceManager, config=config)
+
+    # Managers with known dependencies
+    amp_manager = providers.Singleton(
+        AMPManager,
+        cuda_manager=cuda_manager,
         config=config
     )
-    resource_manager = providers.Singleton(ProcessResourceManager, config=config)
+    storage_manager = providers.Singleton(
+        StorageManager,
+        directory_manager=directory_manager,
+        config=config
+    )
     optuna_manager = providers.Singleton(
         OptunaManager,
         storage_manager=storage_manager,
@@ -69,7 +75,6 @@ class ManagerContainer(containers.DeclarativeContainer):
     )
 
 _container = None
-
 def initialize_factory(config: Dict[str, Any]) -> None:
     """
     Initialize the manager factory with the given configuration.
