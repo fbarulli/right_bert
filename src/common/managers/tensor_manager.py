@@ -1,4 +1,3 @@
-
 # src/common/managers/tensor_manager.py
 from __future__ import annotations
 import torch
@@ -6,6 +5,7 @@ import logging
 import traceback
 from typing import Optional, Union, List, Tuple, Dict, Any
 import numpy as np
+import threading
 
 from src.common.managers.base_manager import BaseManager
 from src.common.managers.cuda_manager import CUDAManager
@@ -23,22 +23,11 @@ class TensorManager(BaseManager):
     - Device-specific operations
     """
 
-    def __init__(
-        self,
-        cuda_manager: CUDAManager,
-        config: Optional[Dict[str, Any]] = None
-    ):
-        """
-        Initialize TensorManager.
-
-        Args:
-            cuda_manager: Injected CUDAManager instance
-            config: Optional configuration dictionary
-        """
-        super().__init__(config)
+    def __init__(self, config, cuda_manager):
         self._cuda_manager = cuda_manager
-        self._local.device = None
-
+        self._local = threading.local()
+        super().__init__(config)
+    
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
         Initialize process-local attributes.
@@ -53,6 +42,7 @@ class TensorManager(BaseManager):
                 raise RuntimeError("CUDAManager must be initialized before TensorManager")
 
             self._local.device = self._cuda_manager.get_device()
+            self._local.initialized = True
 
             logger.info(
                 f"TensorManager initialized for process {self._local.pid} "

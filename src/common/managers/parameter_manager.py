@@ -1,4 +1,3 @@
-
 # src/common/managers/parameter_manager.py
 from __future__ import annotations
 import logging
@@ -263,5 +262,21 @@ class ParameterManager(BaseManager):
             logger.error(traceback.format_exc())
             raise
 
+    def validate_config(self, config):
+        """Validate the configuration parameters.
+
+        Args:
+            config: The configuration to validate
+
+        Raises:
+            ValueError: If the configuration is invalid
+        """
+        if not config:
+            raise ValueError("Configuration cannot be empty")
+        
+        required_fields = ['model_name', 'batch_size', 'epochs']
+        for field in required_fields:
+            if field not in config:
+                raise ValueError(f"Missing required configuration field: {field}")
 
 __all__ = ['ParameterManager']

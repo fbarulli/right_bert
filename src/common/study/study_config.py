@@ -36,7 +36,15 @@ class StudyConfig:
         )
 
     def validate_config(self) -> None:
-        """Validate configuration using parameter manager."""
+        """Validate study configuration."""
+        study_config = self.config.get('study', {})
+        model_config = self.config.get('model', {})
+        
+        # Add model_name to the config if it exists in model section
+        if 'name' in model_config:
+            self.config['model_name'] = model_config['name']
+        
+        # Validate using parameter manager
         self.param_manager.validate_config(self.config)
 
     def suggest_parameters(self, trial: optuna.Trial) -> Dict[str, Any]:
