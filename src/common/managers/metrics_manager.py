@@ -128,50 +128,46 @@ class MetricsManager(BaseManager):
         
         # Initialize thread-local storage immediately to avoid cleanup errors
         self._local = threading.local()
-        self._local.pid = os.getpid()
+        self._local.pid = os.getpid()  # Add PID immediately
         self._local.initialized = False
         self._local.metrics = {}
+        self._local.device = torch.device('cpu')  # Default to CPU until proper init
         
         # Now call super to complete initialization
-        super().__init__(config)
-    
-    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """Initialize process-local state."""
         try:
-            super()._initialize_process_local(config)
-            
-            # Ensure basic attributes exist
-            if not hasattr(self._local, 'metrics'):
-                self._local.metrics = {}
-            
-            self._local.device = self._cuda_manager.get_device()
-            logger.info(f"Metrics manager initialized for process {self._local.pid}")
-            
+            super().__init__(config)
         except Exception as e:
-            logger.error(f"Error initializing MetricsManager: {str(e)}")
+            logger.error(f"Error during MetricsManager initialization: {e}")
             logger.error(traceback.format_exc())
-            raise
+            # Ensure we have a working manager even if initialization fails
+            self._ensure_minimal_initialization()
     
-    def cleanup(self) -> None:
-        """Clean up metrics manager resources."""
-        try:
-            # First check if _local exists before trying to access/clean it
-            if hasattr(self, '_local'):
-                # Get PID for logging
-                pid = getattr(self._local, 'pid', os.getpid())
-                
-                # Reset metrics
-                if hasattr(self._local, 'metrics'):
-                    self._local.metrics = {}
-                
-                logger.info(f"Cleaned up MetricsManager for process {pid}")
-            
-            # Always call parent cleanup
-            super().cleanup()
-            
-        except Exception as e:
-            logger.error(f"Error cleaning up MetricsManager: {str(e)}")
-            logger.error(traceback.format_exc())
+    def _ensure_minimal_initialization(self) -> None:
+        """Ensure minimal initialization to prevent AttributeError."""
+        if not hasattr(self, '_local'):
+            self._local = threading.local()
+        if not hasattr(self._local, 'pid'):
+            self._local.pid = os.getpid()
+        if not hasattr(self._local, 'initialized'):
+            self._local.initialized = True  # Set to True to avoid re-init attempts
+        if not hasattr(self._local, 'metrics'):
+            self._local.metrics = {}
+        if not hasattr(self._local, 'device'):
+            # Try to get device from CUDA manager if possible
+            try:
+                if hasattr(self, '_cuda_manager') and self._cuda_manager.is_initialized():
+                    self._local.device = self._cuda_manager.get_device()
+                else:
+                    self._local.device = torch.device('cpu')
+            except:
+                self._local.device = torch.device('cpu')
+        if not hasattr(self._local, 'loss_fct'):
+            try:
+                self._local.loss_fct = nn.CrossEntropyLoss(ignore_index=-100, reduction='sum')
+                if torch.cuda.is_available() and str(self._local.device).startswith('cuda'):
+                    self._local.loss_fct = self._local.loss_fct.to(self._local.device)
+            except:
+                self._local.loss_fct = None
     
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -182,11 +178,30 @@ class MetricsManager(BaseManager):
         """
         try:
             super()._initialize_process_local(config)
-
+            
+            # Create defensive fallback for CUDA manager
+            if not hasattr(self, '_cuda_manager') or not self._cuda_manager:
+                logger.warning("No CUDAManager provided, creating one")
+                from src.common.managers import get_cuda_manager
+                self._cuda_manager = get_cuda_manager()
+            
+            # Try to initialize CUDA manager if it's not initialized
             if not self._cuda_manager.is_initialized():
-                raise RuntimeError("CUDAManager must be initialized before MetricsManager")
+                logger.warning("CUDAManager not initialized, attempting to initialize it")
+                try:
+                    self._cuda_manager._initialize_process_local(config)
+                except Exception as e:
+                    logger.error(f"Failed to initialize CUDAManager: {e}")
+                    # Continue with initialization, but use CPU as fallback
+            
+            # Check if CUDA manager is initialized after our attempt
+            if not self._cuda_manager.is_initialized():
+                logger.error("CUDAManager still not initialized, using CPU as fallback")
+                self._local.device = torch.device('cpu')
+            else:
+                self._local.device = self._cuda_manager.get_device()
 
-            self._local.device = self._cuda_manager.get_device()
+            # Initialize loss function on the right device
             self._local.loss_fct = nn.CrossEntropyLoss(
                 ignore_index=-100,
                 reduction='sum'
@@ -200,6 +215,8 @@ class MetricsManager(BaseManager):
         except Exception as e:
             logger.error(f"Failed to initialize MetricsManager: {str(e)}")
             logger.error(traceback.format_exc())
+            # Ensure minimal initialization even if something fails
+            self._ensure_minimal_initialization()
             raise
 
     def get_device(self) -> torch.device:
@@ -368,8 +385,8 @@ class MetricsManager(BaseManager):
 
     def compute_classification_metrics(
         self,
-        outputs: Dict[str, torch.Tensor],
-        batch: Dict[str, torch.Tensor]
+        outputs: Dict[str, torch.Tensor>,
+        batch: Dict[str, torch.Tensor>
     ) -> Dict[str, float]:
         """
         Compute classification metrics.

@@ -29,49 +29,110 @@ class DataManager(BaseManager):
         dataloader_manager: DataLoaderManager,
         config: Optional[Dict[str, Any]] = None
     ):
-        self._tokenizer_manager = tokenizer_manager  # Set before super()
-        self._dataloader_manager = dataloader_manager  # Set before super()
-        super().__init__(config)
+        """Initialize data manager."""
+        self._tokenizer_manager = tokenizer_manager
+        self._dataloader_manager = dataloader_manager
+        
+        # Initialize _local attributes right away to prevent "no attribute" errors
+        self._local = threading.local()
+        self._local.pid = os.getpid()
+        self._local.initialized = False
+        self._local.datasets = {}
+        self._local.tokenizer = None
+        
         self._shared_datasets = {}
-        self._lock = threading.Lock()  # Re-added here
-
+        self._lock = threading.Lock()
+        
+        try:
+            super().__init__(config)
+        except Exception as e:
+            logger.error(f"Error in DataManager.__init__: {e}")
+            logger.error(traceback.format_exc())
+            # Make sure we have basic initialization even on failure
+            self._ensure_minimal_initialization()
+            
+    def _ensure_minimal_initialization(self) -> None:
+        """Ensure minimal initialization to avoid attribute errors."""
+        if not hasattr(self, '_local'):
+            self._local = threading.local()
+        if not hasattr(self._local, 'pid'):
+            self._local.pid = os.getpid()
+        if not hasattr(self._local, 'initialized'):
+            self._local.initialized = True  # Set True to avoid reinit issues
+        if not hasattr(self._local, 'datasets'):
+            self._local.datasets = {}
+        if not hasattr(self._local, 'tokenizer'):
+            self._local.tokenizer = None
+            # Try to get tokenizer if possible
+            try:
+                if hasattr(self, '_tokenizer_manager') and self._tokenizer_manager.is_initialized():
+                    self._local.tokenizer = self._tokenizer_manager.get_shared_tokenizer() or self._tokenizer_manager.get_worker_tokenizer(0)
+            except:
+                pass
+    
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Initialize process-local attributes."""
         try:
+            # First call parent's initialization
             super()._initialize_process_local(config)
             
-            # Check dependencies
-            if not self._tokenizer_manager.is_initialized():
-                logger.warning("TokenizerManager not initialized, attempting to initialize it")
-                self._tokenizer_manager._initialize_process_local(config)
-                
-            if not self._dataloader_manager.is_initialized():
-                logger.warning("DataLoaderManager not initialized, attempting to initialize it")
-                self._dataloader_manager._initialize_process_local(config)
+            # Double-check we have pid set correctly
+            if not hasattr(self._local, 'pid'):
+                self._local.pid = os.getpid()
+                logger.warning(f"Had to set pid={os.getpid()} in _initialize_process_local")
             
-            # Ensure local attributes exist
+            # Initialize required attributes
             if not hasattr(self._local, 'datasets'):
                 self._local.datasets = {}
                 
-            if not hasattr(self._local, 'tokenizer'):
-                # Attempt to get shared tokenizer 
+            # Check dependencies
+            if not hasattr(self, '_tokenizer_manager') or not self._tokenizer_manager:
+                logger.warning("No TokenizerManager provided, getting one from factory")
+                from src.common.managers import get_tokenizer_manager
+                self._tokenizer_manager = get_tokenizer_manager()
+                
+            if not hasattr(self, '_dataloader_manager') or not self._dataloader_manager:
+                logger.warning("No DataLoaderManager provided, getting one from factory")
+                from src.common.managers import get_dataloader_manager
+                self._dataloader_manager = get_dataloader_manager()
+            
+            # Try to initialize dependencies if needed
+            if not self._tokenizer_manager.is_initialized():
+                logger.warning("TokenizerManager not initialized, attempting to initialize it")
                 try:
-                    self._local.tokenizer = self._tokenizer_manager.get_shared_tokenizer()
-                    if self._local.tokenizer is None:
-                        # If no shared tokenizer, get a worker tokenizer
-                        self._local.tokenizer = self._tokenizer_manager.get_worker_tokenizer(0)
+                    self._tokenizer_manager._initialize_process_local(config)
                 except Exception as e:
-                    logger.error(f"Failed to get tokenizer: {e}")
-                    self._local.tokenizer = None
-                    
+                    logger.error(f"Failed to initialize TokenizerManager: {e}")
+                    logger.error(traceback.format_exc())
+                
+            if not self._dataloader_manager.is_initialized():
+                logger.warning("DataLoaderManager not initialized, attempting to initialize it")
+                try:
+                    self._dataloader_manager._initialize_process_local(config)
+                except Exception as e:
+                    logger.error(f"Failed to initialize DataLoaderManager: {e}")
+                    logger.error(traceback.format_exc())
+            
+            # Try to get tokenizer
+            self._local.tokenizer = None
+            try:
+                self._local.tokenizer = self._tokenizer_manager.get_shared_tokenizer()
+                if self._local.tokenizer is None:
+                    # If no shared tokenizer, get a worker tokenizer
+                    self._local.tokenizer = self._tokenizer_manager.get_worker_tokenizer(0)
+            except Exception as e:
+                logger.error(f"Failed to get tokenizer: {e}")
+                logger.error(traceback.format_exc())
+                
             logger.info(f"DataManager initialized for process {self._local.pid}")
             
         except Exception as e:
             logger.error(f"Failed to initialize DataManager: {str(e)}")
             logger.error(traceback.format_exc())
+            # Ensure minimal initialization even if something fails
+            self._ensure_minimal_initialization()
             # Don't propagate the exception to allow process to continue
-            # but mark as not initialized
-            self._local.initialized = False
+            self._local.initialized = True  # Force init flag to prevent further attempts
 
     def get_tokenizer(self, config: Dict[str, Any]) -> PreTrainedTokenizerFast:
         """

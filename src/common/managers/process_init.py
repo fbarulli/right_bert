@@ -21,163 +21,87 @@ def ensure_process_initialized(config: Optional[Dict[str, Any]] = None) -> None:
     """
     try:
         import time  # Add import for time.time()
-        from src.common.manager_status import fix_manager, check_manager_attributes
-        from src.common.managers import (
-            get_cuda_manager, get_directory_manager, get_wandb_manager,
-            get_batch_manager, get_parameter_manager, get_metrics_manager,
-            get_tokenizer_manager, get_data_manager, get_dataloader_manager  # Add more managers
-        )
+        from src.common.managers.verify_managers import check_manager_health_and_repair
         
-        # Get critical managers but don't instantiate batch_manager yet
-        # since it depends on cuda_manager
-        managers = {
-            "CUDAManager": get_cuda_manager(),
-            "DirectoryManager": get_directory_manager(),
-            "WandbManager": get_wandb_manager(),
-            "ParameterManager": get_parameter_manager(),
-            "MetricsManager": get_metrics_manager(),
-            "TokenizerManager": get_tokenizer_manager(),  # Add tokenizer manager
-        }
-        
+        # Get managers - but enforce strict initialization order for dependencies
         logger.info(f"Initializing managers for child process {os.getpid()}")
         
-        # First, ensure all managers have required base attributes
-        for name, manager in managers.items():
-            # Check for missing attributes and fix them
-            required_attrs = ['pid', 'initialized']
-            ok, missing = check_manager_attributes(manager, name, required_attrs)
-            
-            if not ok:
-                # Set up defaults for base attributes
-                defaults = {
-                    'pid': os.getpid(),
-                    'initialized': False
-                }
-                fix_manager(manager, name, defaults)
+        # First, get and initialize CUDA manager (top dependency)
+        from src.common.managers import get_cuda_manager
+        cuda_manager = get_cuda_manager()
         
-        # Special handling for problematic managers
-        # WandbManager might need special attributes
-        wandb_manager = managers["WandbManager"]
-        wandb_attrs = ['enabled', 'run', 'start_time', 'project', 'entity']
-        for attr in wandb_attrs:
-            if not hasattr(wandb_manager._local, attr):
-                logger.warning(f"WandbManager.{attr} attribute missing in process {os.getpid()}, initializing")
-                if attr == 'enabled':
-                    setattr(wandb_manager._local, attr, False)
-                elif attr == 'run':
-                    setattr(wandb_manager._local, attr, None)
-                elif attr == 'start_time':
-                    setattr(wandb_manager._local, attr, time.time())
-                elif attr == 'project':
-                    setattr(wandb_manager._local, attr, 'default')
-                elif attr == 'entity':
-                    setattr(wandb_manager._local, attr, None)
-                elif attr == 'initialized':
-                    setattr(wandb_manager._local, attr, True)
-        
-        # ParameterManager often has issues, force initialize it if needed
-        parameter_manager = managers["ParameterManager"]
-        if not parameter_manager.is_initialized():
-            logger.critical(f"ParameterManager initialization failed in process {os.getpid()}, forcing it")
-            # Force initialize it
-            parameter_manager._local = threading.local()
-            parameter_manager._local.pid = os.getpid()
-            parameter_manager._local.initialized = True
-            # Set all essential attributes to avoid AttributeError later
-            parameter_manager._local.base_config = config or {}
-            parameter_manager._local.search_space = {}
-            parameter_manager._local.param_ranges = {}
-            parameter_manager._local.hyperparameters = {}
-            try:
-                parameter_manager._initialize_process_local(config)
-                logger.info(f"ParameterManager force-initialization successful for process {os.getpid()}")
-            except Exception as e:
-                logger.error(f"Force initialization of ParameterManager failed: {e}")
-        
-        # Initialize managers in dependency order - critical that CUDA is initialized first
-        cuda_manager = managers["CUDAManager"]
+        # Check if CUDA manager was initialized in this process
         if not cuda_manager.is_initialized():
             logger.info(f"Initializing CUDA manager for process {os.getpid()}")
             cuda_manager._initialize_process_local(config)
-            
-        # Verify CUDA initialization was successful
+        
+        # Check if initialization worked
         if not cuda_manager.is_initialized():
-            logger.error(f"CUDA manager failed to initialize in process {os.getpid()}")
+            logger.error(f"CUDA manager failed to initialize - using repair utility")
+            from src.common.managers.manager_repair import repair_manager
+            repair_manager(cuda_manager, "CUDAManager")
         else:
-            logger.info(f"CUDA manager initialized successfully in process {os.getpid()}")
-        
-        # Now that CUDA is initialized, it's safe to get the batch manager
-        try:
-            batch_manager = get_batch_manager()
-            managers["BatchManager"] = batch_manager
-            logger.info(f"Retrieved BatchManager for process {os.getpid()}")
-        except Exception as e:
-            logger.error(f"Error getting BatchManager: {e}")
-            logger.error("Stack trace:", exc_info=True)
-        
-        # Now get DataLoaderManager and initialize it
-        try:
-            dataloader_manager = get_dataloader_manager()
-            if not dataloader_manager.is_initialized():
-                dataloader_manager._initialize_process_local(config)
-                logger.info(f"DataLoaderManager initialized for process {os.getpid()}")
-        except Exception as e:
-            logger.error(f"Error initializing DataLoaderManager: {e}")
-            logger.error("Stack trace:", exc_info=True)
-        
-        # Now initialize DataManager - critical for dataloaders
-        try:
-            data_manager = get_data_manager()
-            if not data_manager.is_initialized():
-                data_manager._initialize_process_local(config)
-                logger.info(f"DataManager initialized for process {os.getpid()}")
+            logger.info(f"CUDA manager initialized for process {os.getpid()}")
             
-            # Verify DataManager was initialized correctly
-            if not data_manager.is_initialized():
-                logger.error(f"DataManager failed to initialize in process {os.getpid()}")
-                # Force initialization
-                data_manager._local = threading.local()
-                data_manager._local.pid = os.getpid()
-                data_manager._local.initialized = True
-                data_manager._initialize_process_local(config)
-                logger.warning(f"Forced DataManager initialization in process {os.getpid()}")
-        except Exception as e:
-            logger.error(f"Error initializing DataManager: {e}")
-            logger.error("Stack trace:", exc_info=True)
-        
-        # Continue with other manager initialization
-        directory_manager = managers["DirectoryManager"]
+        # Now get and initialize directory manager
+        from src.common.managers import get_directory_manager
+        directory_manager = get_directory_manager()
         if not directory_manager.is_initialized():
+            logger.info(f"Initializing directory manager for process {os.getpid()}")
             directory_manager._initialize_process_local(config)
             
-        # Ensure directory_manager has all required directory attributes
-        required_dirs = ['base_dir', 'output_dir', 'data_dir', 'cache_dir', 'model_dir', 'temp_dir']
-        for dir_attr in required_dirs:
-            if not hasattr(directory_manager._local, dir_attr):
-                if dir_attr == 'base_dir':
-                    setattr(directory_manager._local, dir_attr, os.getcwd())
-                elif dir_attr == 'temp_dir':
-                    import tempfile
-                    setattr(directory_manager._local, dir_attr, tempfile.mkdtemp())
-                else:
-                    # Derive from base_dir
-                    base = getattr(directory_manager._local, 'base_dir', os.getcwd())
-                    subdir = dir_attr.replace('_dir', '')
-                    setattr(directory_manager._local, dir_attr, os.path.join(base, subdir))
+        # Now get and initialize tokenizer manager (needed by data manager)
+        from src.common.managers import get_tokenizer_manager
+        tokenizer_manager = get_tokenizer_manager()
+        if not tokenizer_manager.is_initialized():
+            logger.info(f"Initializing tokenizer manager for process {os.getpid()}")
+            tokenizer_manager._initialize_process_local(config)
+            
+        # Now get and initialize dataloader manager (needed by data manager)
+        from src.common.managers import get_dataloader_manager
+        dataloader_manager = get_dataloader_manager()
+        if not dataloader_manager.is_initialized():
+            logger.info(f"Initializing dataloader manager for process {os.getpid()}")
+            dataloader_manager._initialize_process_local(config)
+            
+        # Now get and initialize data manager
+        from src.common.managers import get_data_manager
+        data_manager = get_data_manager()
+        if not data_manager.is_initialized():
+            logger.info(f"Initializing data manager for process {os.getpid()}")
+            try:
+                data_manager._initialize_process_local(config)
+            except Exception as e:
+                logger.error(f"Error initializing data manager: {e}")
+                logger.error(traceback.format_exc())
+                # Try emergency repair
+                from src.common.managers.manager_repair import repair_manager
+                repair_manager(data_manager, "DataManager")
+                
+        # Now initialize metrics manager (depends on CUDA)
+        from src.common.managers import get_metrics_manager
+        metrics_manager = get_metrics_manager()
+        if not metrics_manager.is_initialized():
+            logger.info(f"Initializing metrics manager for process {os.getpid()}")
+            try:
+                metrics_manager._initialize_process_local(config)
+            except Exception as e:
+                logger.error(f"Error initializing metrics manager: {e}")
+                logger.error(traceback.format_exc())
+                # Try emergency repair
+                from src.common.managers.manager_repair import repair_manager
+                repair_manager(metrics_manager, "MetricsManager")
         
-        # Continue with other managers...
+        # Finally, check all managers for health and repair if needed
+        logger.info(f"Verifying manager health for process {os.getpid()}")
+        manager_status = check_manager_health_and_repair(config)
         
-        # Finally, verify all managers are initialized
-        all_initialized = True
-        for name, manager in managers.items():
-            if not manager.is_initialized():
-                logger.error(f"{name} is still not initialized in process {os.getpid()}")
-                all_initialized = False
-        
-        if all_initialized:
-            logger.info(f"All managers initialized successfully in process {os.getpid()}")
+        # Log any remaining issues
+        failed_managers = [name for name, status in manager_status.items() if not status]
+        if failed_managers:
+            logger.error(f"The following managers could not be repaired: {failed_managers}")
         else:
-            logger.error(f"Failed to initialize all managers in process {os.getpid()}")
+            logger.info(f"All managers are properly initialized for process {os.getpid()}")
             
     except Exception as e:
         logger.error(f"Error in ensure_process_initialized: {str(e)}")
