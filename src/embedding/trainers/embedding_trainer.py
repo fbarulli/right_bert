@@ -4,7 +4,10 @@ import logging
 import torch
 import torch.nn as nn
 import time
-from typing import Dict, Any, Optional, List, Tuple
+import threading
+import traceback  # Add explicit import for traceback
+import inspect  # Add explicit import for inspect
+from typing import Dict, Any, Optional, List, Tuple, Set  # Add Set to typing imports
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
@@ -13,6 +16,7 @@ import json
 from src.common.managers.amp_manager import AMPManager
 from src.common.managers.wandb_manager import WandbManager
 from src.common.managers.metrics_manager import MetricsLogger
+from src.common.cuda_utils import ensure_model_on_device  # Import utility function
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +205,10 @@ class EmbeddingTrainer:
         try:
             start_time = time.time()
             
+            # Verify model is on the right device first
+            self.model = ensure_model_on_device(self.model, self.device)
+            logger.info(f"Verified model is on device: {self.device}")
+            
             for epoch in range(max_epochs):
                 self.current_epoch = epoch
                 
@@ -251,6 +259,41 @@ class EmbeddingTrainer:
             logger.error(f"Error during training: {str(e)}")
             logger.error("Stack trace:", exc_info=True)
             raise
+    
+    def _safe_wandb_log(self, metrics: Dict[str, float], step: int) -> None:
+        """
+        Safely log metrics to WandB with comprehensive error handling.
+        
+        Args:
+            metrics: Dictionary of metrics to log
+            step: Current training step
+        """
+        if not self.wandb_manager:
+            return
+            
+        try:
+            # Multiple ways to check if WandB is enabled
+            wandb_enabled = False
+            
+            # Method 1: Check is_enabled() method
+            if hasattr(self.wandb_manager, 'is_enabled') and callable(self.wandb_manager.is_enabled):
+                wandb_enabled = self.wandb_manager.is_enabled()
+            # Method 2: Check enabled property
+            elif hasattr(self.wandb_manager, 'enabled'):
+                wandb_enabled = self.wandb_manager.enabled
+            # Method 3: Check _enabled attribute
+            elif hasattr(self.wandb_manager, '_enabled'):
+                wandb_enabled = self.wandb_manager._enabled
+                
+            if wandb_enabled:
+                # Also check for log_metrics method
+                if hasattr(self.wandb_manager, 'log_metrics') and callable(self.wandb_manager.log_metrics):
+                    self.wandb_manager.log_metrics(metrics, step=step)
+                else:
+                    logger.warning("WandB manager has no log_metrics method")
+        except Exception as e:
+            logger.warning(f"Error logging to WandB: {e}")
+            # Continue execution - logging failure should not interrupt training
     
     def train_epoch(self) -> Dict[str, float]:
         """
@@ -399,7 +442,7 @@ class EmbeddingTrainer:
                 # Update progress bar
                 progress_bar.set_postfix(loss=loss.item())
                 
-                # Log metrics every N steps
+                # Log metrics every N steps - with safe WandB handling
                 log_interval = self.config['training'].get('log_interval', 50)
                 if self.global_step % log_interval == 0:
                     # Compute batch metrics
@@ -415,9 +458,8 @@ class EmbeddingTrainer:
                         step=self.global_step
                     )
                     
-                    # Update WandB
-                    if self.wandb_manager and self.wandb_manager.is_enabled():
-                        self.wandb_manager.log_metrics(batch_metrics, step=self.global_step)
+                    # Update WandB - use our safer method
+                    self._safe_wandb_log(batch_metrics, self.global_step)
                 
                 # Increment counters
                 self.global_step += 1
@@ -425,6 +467,7 @@ class EmbeddingTrainer:
                 
             except Exception as e:
                 logger.error(f"Error during forward/backward pass: {e}")
+                logger.error(traceback.format_exc())  # Add full traceback
                 continue
             
         # Compute epoch metrics
@@ -550,9 +593,8 @@ class EmbeddingTrainer:
             step=self.global_step
         )
         
-        # Log to WandB
-        if self.wandb_manager and self.wandb_manager.is_enabled():
-            self.wandb_manager.log_metrics(combined_metrics, step=self.global_step)
+        # Log to WandB - use our safer method
+        self._safe_wandb_log(combined_metrics, self.global_step)
     
     def save_model(self, tag: str) -> None:
         """
@@ -583,7 +625,7 @@ class EmbeddingTrainer:
                     'epoch': self.current_epoch,
                     'global_step': self.global_step,
                     'best_val_loss': self.best_val_loss,
-                    'config': self.config
+                    'config': self.config,
                 }
                 torch.save(checkpoint, checkpoint_path)
                 
