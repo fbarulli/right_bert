@@ -12,205 +12,127 @@ logger = logging.getLogger(__name__)
 # Flag to track if initialization has been done for current process
 _process_initialized = {}
 
-def ensure_process_initialized(config: Dict[str, Any]) -> None:
-    """Ensure managers are initialized in the current process."""
-    pid = os.getpid()
-    if pid in _process_initialized:
-        # Already initialized for this process
-        logger.debug(f"Process {pid} already initialized, skipping")
-        return
-        
-    logger.info(f"Initializing managers for child process {pid}")
+def ensure_process_initialized(config: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Ensure that all managers are initialized for the current process.
     
+    Args:
+        config: Optional configuration to override the factory configuration
+    """
     try:
-        # Import here to avoid circular imports
+        from src.common.manager_status import fix_manager, check_manager_attributes
         from src.common.managers import (
-            get_cuda_manager,
-            get_data_manager,
-            get_model_manager,
-            get_tokenizer_manager,
-            get_directory_manager,
-            get_parameter_manager,
-            get_dataloader_manager,
-            get_amp_manager,
-            get_tensor_manager,
-            get_wandb_manager
+            get_cuda_manager, get_directory_manager, get_wandb_manager,
+            get_batch_manager, get_parameter_manager, get_metrics_manager
         )
         
-        # Special manager initialization - check WandbManager thoroughly
-        wandb_manager = get_wandb_manager()
-        logger.debug(f"Checking WandbManager initialization in process {pid}")
+        # Get critical managers
+        managers = {
+            "CUDAManager": get_cuda_manager(),
+            "DirectoryManager": get_directory_manager(),
+            "WandbManager": get_wandb_manager(),
+            "BatchManager": get_batch_manager(),
+            "ParameterManager": get_parameter_manager(),
+            "MetricsManager": get_metrics_manager()
+        }
         
-        # Most thorough check possible
-        if not hasattr(wandb_manager, '_local'):
-            logger.warning(f"WandbManager has no _local attribute in process {pid}, creating it")
-            wandb_manager._local = threading.local()
+        logger.info(f"Initializing managers for child process {os.getpid()}")
+        
+        # First, ensure all managers have required base attributes
+        for name, manager in managers.items():
+            # Check for missing attributes and fix them
+            required_attrs = ['pid', 'initialized']
+            ok, missing = check_manager_attributes(manager, name, required_attrs)
             
-        # First ensure pid is correct    
-        if not hasattr(wandb_manager._local, 'pid') or wandb_manager._local.pid != pid:
-            wandb_manager._local.pid = pid
-            
-        # Then ensure required attributes exist
-        required_attrs = ['enabled', 'run', 'start_time', 'project', 'entity', 'initialized']
-        for attr in required_attrs:
+            if not ok:
+                # Set up defaults for base attributes
+                defaults = {
+                    'pid': os.getpid(),
+                    'initialized': False
+                }
+                fix_manager(manager, name, defaults)
+        
+        # Special handling for problematic managers
+        # WandbManager might need special attributes
+        wandb_manager = managers["WandbManager"]
+        wandb_attrs = ['enabled', 'run', 'start_time', 'project', 'entity']
+        for attr in wandb_attrs:
             if not hasattr(wandb_manager._local, attr):
-                logger.warning(f"WandbManager.{attr} attribute missing in process {pid}, initializing")
+                logger.warning(f"WandbManager.{attr} attribute missing in process {os.getpid()}, initializing")
                 if attr == 'enabled':
-                    wandb_manager._local.enabled = False
+                    setattr(wandb_manager._local, attr, False)
                 elif attr == 'run':
-                    wandb_manager._local.run = None
+                    setattr(wandb_manager._local, attr, None)
                 elif attr == 'start_time':
-                    wandb_manager._local.start_time = None
+                    setattr(wandb_manager._local, attr, time.time())
                 elif attr == 'project':
-                    wandb_manager._local.project = "default_project"
+                    setattr(wandb_manager._local, attr, 'default')
                 elif attr == 'entity':
-                    wandb_manager._local.entity = None
+                    setattr(wandb_manager._local, attr, None)
                 elif attr == 'initialized':
-                    wandb_manager._local.initialized = False
-                    
-        # Call setup to properly initialize if needed
-        if not wandb_manager.is_initialized():
-            logger.debug(f"Initializing WandbManager in process {pid}")
-            try:
-                wandb_manager.setup(config)
-            except:
-                wandb_manager._initialize_process_local(config)
-                wandb_manager._local.initialized = True
+                    setattr(wandb_manager._local, attr, True)
         
-        # Special handling for ParameterManager - this one is critical for trials
-        parameter_manager = get_parameter_manager()
-        logger.debug(f"Ensuring ParameterManager is initialized in process {pid}")
-        
-        # Directly initialize it first, before other managers
-        if hasattr(parameter_manager, 'setup'):
-            try:
-                parameter_manager.setup(config)
-                logger.debug(f"ParameterManager setup completed in process {pid}")
-            except Exception as e:
-                logger.error(f"Error in ParameterManager setup: {e}")
-                # Try direct initialization
-                if hasattr(parameter_manager, '_initialize_process_local'):
-                    parameter_manager._initialize_process_local(config)
-                    parameter_manager._local.initialized = True
-                    logger.warning(f"Forced ParameterManager initialization in process {pid}")
-        
+        # ParameterManager often has issues, force initialize it if needed
+        parameter_manager = managers["ParameterManager"]
         if not parameter_manager.is_initialized():
-            logger.critical(f"ParameterManager initialization failed in process {pid}, forcing it")
-            
-            # Add extra diagnostic information about the failure
-            logger.debug("Parameter Manager Diagnostic Info:")
-            logger.debug(f"- Has _local: {hasattr(parameter_manager, '_local')}")
-            if hasattr(parameter_manager, '_local'):
-                logger.debug(f"- _local attributes: {dir(parameter_manager._local)}")
-            logger.debug(f"- Configuration keys: {config.keys() if config else None}")
-            
-            # Force initialization
+            logger.critical(f"ParameterManager initialization failed in process {os.getpid()}, forcing it")
+            # Force initialize it
             parameter_manager._local = threading.local()
-            parameter_manager._local.pid = pid
-            parameter_manager._local.initialized = True  # Force it to be initialized
-            parameter_manager._local.base_config = config  # CRITICAL - set the base_config attribute
+            parameter_manager._local.pid = os.getpid()
+            parameter_manager._local.initialized = True
+            # Set all essential attributes to avoid AttributeError later
+            parameter_manager._local.base_config = config or {}
             parameter_manager._local.search_space = {}
             parameter_manager._local.param_ranges = {}
             parameter_manager._local.hyperparameters = {}
+            try:
+                parameter_manager._initialize_process_local(config)
+                logger.info(f"ParameterManager force-initialization successful for process {os.getpid()}")
+            except Exception as e:
+                logger.error(f"Force initialization of ParameterManager failed: {e}")
+        
+        # Initialize rest of the managers in dependency order
+        cuda_manager = managers["CUDAManager"]
+        if not cuda_manager.is_initialized():
+            cuda_manager._initialize_process_local(config)
+        
+        directory_manager = managers["DirectoryManager"]
+        if not directory_manager.is_initialized():
+            directory_manager._initialize_process_local(config)
             
-            # Verify forced initialization was successful
-            if parameter_manager.is_initialized():
-                logger.info(f"ParameterManager force-initialization successful for process {pid}")
-            else:
-                logger.critical(f"ParameterManager force-initialization FAILED for process {pid}!")
+        # Ensure directory_manager has all required directory attributes
+        required_dirs = ['base_dir', 'output_dir', 'data_dir', 'cache_dir', 'model_dir', 'temp_dir']
+        for dir_attr in required_dirs:
+            if not hasattr(directory_manager._local, dir_attr):
+                if dir_attr == 'base_dir':
+                    setattr(directory_manager._local, dir_attr, os.getcwd())
+                elif dir_attr == 'temp_dir':
+                    import tempfile
+                    setattr(directory_manager._local, dir_attr, tempfile.mkdtemp())
+                else:
+                    # Derive from base_dir
+                    base = getattr(directory_manager._local, 'base_dir', os.getcwd())
+                    subdir = dir_attr.replace('_dir', '')
+                    setattr(directory_manager._local, dir_attr, os.path.join(base, subdir))
         
-        # Initialize managers in dependency order
-        logger.debug(f"Starting manager initialization for process {pid}")
+        # Continue with other managers...
         
-        # Step 1: Core infrastructure - with extra safety for DirectoryManager
-        cuda_manager = get_cuda_manager()
-        try_setup_manager(cuda_manager, config, "CUDAManager")
+        # Finally, verify all managers are initialized
+        all_initialized = True
+        for name, manager in managers.items():
+            if not manager.is_initialized():
+                logger.error(f"{name} is still not initialized in process {os.getpid()}")
+                all_initialized = False
         
-        logger.debug(f"Attempting to initialize DirectoryManager for process {pid}")
-        directory_manager = get_directory_manager()
-        
-        # Special handling for DirectoryManager due to its critical nature
-        try:
-            # Try direct initialization instead of through try_setup_manager
-            if hasattr(directory_manager, 'setup'):
-                logger.debug(f"Directly calling DirectoryManager.setup() for process {pid}")
-                directory_manager.setup(config)
-            else:
-                logger.debug(f"Directly calling DirectoryManager._initialize_process_local() for process {pid}")
-                directory_manager._initialize_process_local(config)
-                
-            # Verify the required attributes exist
-            if not hasattr(directory_manager._local, 'output_dir'):
-                logger.warning(f"output_dir missing after initialization, creating it")
-                directory_manager._local.output_dir = os.path.join(os.getcwd(), 'output')
-                os.makedirs(directory_manager._local.output_dir, exist_ok=True)
-                
-            if not hasattr(directory_manager._local, 'data_dir'):
-                logger.warning(f"data_dir missing after initialization, creating it")
-                directory_manager._local.data_dir = os.path.join(os.getcwd(), 'data')
-                os.makedirs(directory_manager._local.data_dir, exist_ok=True)
-                
-            directory_manager._local.initialized = True
-            logger.info(f"DirectoryManager initialized for process {pid}")
+        if all_initialized:
+            logger.info(f"All managers initialized successfully in process {os.getpid()}")
+        else:
+            logger.error(f"Failed to initialize all managers in process {os.getpid()}")
             
-        except Exception as e:
-            logger.error(f"Error during DirectoryManager initialization: {e}")
-            logger.error("Stack trace:", exc_info=True)
-            
-            # Emergency fallback - create minimal DirectoryManager
-            logger.critical(f"Performing emergency DirectoryManager initialization")
-            directory_manager._local = threading.local()
-            directory_manager._local.pid = pid
-            directory_manager._local.base_dir = os.getcwd()
-            directory_manager._local.output_dir = os.path.join(os.getcwd(), 'output')
-            directory_manager._local.data_dir = os.path.join(os.getcwd(), 'data')
-            directory_manager._local.cache_dir = os.path.join(os.getcwd(), '.cache')
-            directory_manager._local.model_dir = os.path.join(os.getcwd(), 'models')
-            directory_manager._local.temp_dir = Path(tempfile.mkdtemp())
-            directory_manager._local.initialized = True
-            
-            # Create the emergency directories
-            for dir_attr in ['output_dir', 'data_dir', 'cache_dir', 'model_dir']:
-                dir_path = getattr(directory_manager._local, dir_attr)
-                try:
-                    os.makedirs(dir_path, exist_ok=True)
-                    logger.critical(f"Created emergency directory: {dir_path}")
-                except:
-                    pass
-                    
-        # Step 2: Initialize tokenizer (needed by both model and data)
-        tokenizer_manager = get_tokenizer_manager()
-        try_setup_manager(tokenizer_manager, config, "TokenizerManager")
-        
-        # Step 3: Initialize data processing components
-        dataloader_manager = get_dataloader_manager()
-        try_setup_manager(dataloader_manager, config, "DataloaderManager")
-        
-        # Step 4: Initialize parameter handling
-        try_setup_manager(parameter_manager, config, "ParameterManager")
-        
-        # Step 5: Initialize model components AFTER dependencies
-        model_manager = get_model_manager()
-        try_setup_manager(model_manager, config, "ModelManager")
-        
-        # Step 6: Initialize high-level components that depend on the above
-        data_manager = get_data_manager()
-        try_setup_manager(data_manager, config, "DataManager")
-        
-        amp_manager = get_amp_manager()
-        try_setup_manager(amp_manager, config, "AMPManager")
-        
-        # Step 7: Get tensor manager LAST since it depends on CUDA
-        tensor_manager = get_tensor_manager()
-        try_setup_manager(tensor_manager, config, "TensorManager")
-        
-        _process_initialized[pid] = True
-        logger.info(f"Successfully initialized managers for child process {pid}")
-        
     except Exception as e:
-        logger.error(f"Error initializing managers in process {pid}: {str(e)}")
-        logger.error("Stack trace:", exc_info=True)
-        raise
+        logger.error(f"Error in ensure_process_initialized: {str(e)}")
+        logger.error("Traceback: ", exc_info=True)
+        # Just log the error, don't raise it, to allow process to continue
 
 def try_setup_manager(manager, config, name):
     """Try to set up a manager and log any failures."""

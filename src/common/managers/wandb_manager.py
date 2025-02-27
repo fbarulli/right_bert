@@ -28,32 +28,103 @@ except ImportError:
     logger.debug("Module level wandb import failed")
 
 class WandbManager(BaseManager):
-    """
-    Manages Weights & Biases logging and experiment tracking.
-
-    This manager handles:
-    - W&B initialization and authentication
-    - Run management and cleanup
-    - Metric logging and progress tracking
-    - Trial tracking for optimization
-    """
-
-    def __init__(
-        self,
-        config: Dict[str, Any],
-        study_name: Optional[str] = "default_study"
-    ):
-        """Initialize the WandbManager."""
-        # Create _local immediately with all required attributes
+    """Manager for Weights & Biases integration."""
+    
+    def __init__(self, config: Dict[str, Any], study_name: Optional[str] = None):
+        """
+        Initialize the WandbManager.
+        
+        Args:
+            config: Application configuration
+            study_name: Optional study name for W&B run grouping
+        """
+        # Always set enabled flag at init time
+        self._enabled = False
+        self._has_wandb = False
+        
+        try:
+            import wandb
+            self._has_wandb = True
+        except ImportError:
+            logger.warning("W&B not installed. W&B logging disabled.")
+            self._has_wandb = False
+        
+        # Initialize thread-local storage immediately to avoid cleanup errors
         self._local = threading.local()
+        self._local.pid = os.getpid()  
+        self._local.initialized = False
+        self._local.enabled = False
+        self._local.run = None
         
-        # Set all required attributes with defaults
-        self._set_default_attributes()
-        
-        # Now call super to initialize other parts
+        # Set study name
+        self.study_name = study_name or "no_study"
+            
+        # Continue with normal initialization
         super().__init__(config)
-        self._study_name = study_name or "default_study"
 
+    def _initialize_process_local(self, config: Dict[str, Any]) -> None:
+        """
+        Initialize process-local state for W&B integration.
+        
+        Args:
+            config: Configuration dictionary
+        """
+        try:
+            super()._initialize_process_local(config)
+            
+            # Set all essential attributes to prevent AttributeError
+            self._local.enabled = False
+            self._local.run = None
+            self._local.project = config.get('output', {}).get('wandb', {}).get('project', 'default_project')
+            self._local.entity = config.get('output', {}).get('wandb', {}).get('entity', None)
+            self._local.start_time = time.time()
+            
+            # Check if WandB is enabled in config
+            if not self._has_wandb:
+                logger.warning("WandB not installed. WandB logging disabled.")
+                return
+                
+            wandb_config = config.get('output', {}).get('wandb', {})
+            if not wandb_config.get('enabled', False):
+                logger.info("WandB logging disabled in config.")
+                return
+                
+            # Set enabled flag
+            self._local.enabled = True
+            self._enabled = True
+            
+            logger.info(f"WandbManager initialized for process {self._local.pid}")
+        
+        except Exception as e:
+            logger.error(f"Failed to initialize WandbManager: {str(e)}")
+            # Ensure we have safe defaults even after errors
+            self._local.enabled = False
+            self._local.run = None
+
+    def is_enabled(self) -> bool:
+        """
+        Check if WandB is enabled.
+        
+        Returns:
+            bool: True if WandB is enabled, False otherwise
+        """
+        # First check instance attribute - works without initialization
+        if not self._has_wandb or not self._enabled:
+            return False
+            
+        # Now check thread-local if initialized
+        try:
+            self.ensure_initialized()
+            return self._local.enabled and self._local.run is not None
+        except Exception:
+            # If ensure_initialized fails, fall back to instance attribute
+            return False
+
+    @property
+    def enabled(self) -> bool:
+        """Property accessor for enabled state."""
+        return self.is_enabled()
+    
     def _set_default_attributes(self):
         """Set all required attributes with default values."""
         self._local.enabled = False
