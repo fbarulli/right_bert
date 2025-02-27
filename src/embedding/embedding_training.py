@@ -45,9 +45,31 @@ def train_embeddings(
     
     # Import the fix_dataloader_config function
     from src.common.fix_dataloader import fix_dataloader_config
+    from src.common.fix_batch_labels import ensure_batch_has_labels
     
     # Fix config to avoid multiprocessing issues
     config = fix_dataloader_config(config)
+    
+    # Log key model and dataset information for diagnosis
+    device = next(model.parameters()).device
+    logger.info(f"Model is on device: {device}")
+    logger.info(f"Training dataset size: {len(train_dataset) if train_dataset else 'unknown'}")
+    logger.info(f"Validation dataset size: {len(val_dataset) if val_dataset else 'unknown'}")
+    
+    # Check if batch preparation properly includes labels
+    sample_batch = next(iter(train_loader))
+    has_labels = 'labels' in sample_batch
+    logger.info(f"Sample batch keys: {list(sample_batch.keys())}")
+    logger.info(f"Batch includes labels: {has_labels}")
+    
+    # Monkey patch the DataLoader's __iter__ method to ensure labels
+    original_iter = train_loader.__iter__
+    
+    def patched_iter():
+        for batch in original_iter():
+            yield ensure_batch_has_labels(batch)
+            
+    train_loader.__iter__ = patched_iter
     
     # Get all required managers from the factory
     from src.common.managers import (

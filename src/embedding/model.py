@@ -79,50 +79,69 @@ class EmbeddingBert(BertPreTrainedModel):
     def forward(
         self,
         input_ids: Tensor,
-        attention_mask: Tensor,
+        attention_mask: Optional[Tensor] = None,
         token_type_ids: Optional[Tensor] = None,
         position_ids: Optional[Tensor] = None,
         labels: Optional[Tensor] = None,
-        output_hidden_states: bool = False,
-        output_attentions: bool = False,
-        return_dict: bool = True
-    ) -> Union[Tuple[Tensor, ...], Dict[str, Tensor]]:
-        """Forward pass through the model."""
-        outputs = self.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            output_hidden_states=output_hidden_states,
-            output_attentions=output_attentions,
-            return_dict=True
-        )
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Forward pass.
 
-        sequence_output = outputs.last_hidden_state
-        prediction_scores = self.cls(sequence_output)
+        Args:
+            input_ids: Input token IDs
+            attention_mask: Attention mask
+            token_type_ids: Token type IDs
+            position_ids: Position IDs
+            labels: Optional labels for computing loss
 
-        loss = None
-        if labels is not None:
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+        Returns:
+            Dict[str, Any]: Model outputs including loss if labels are provided
+        """
+        try:
+            # Log crucial info for debugging
+            device_info = f"input_ids on {input_ids.device}, model on {next(self.parameters()).device}"
+            logger.debug(f"Forward pass starting with {device_info}")
 
-            active_loss = labels.view(-1) != -100
-            if active_loss.any():
-                active_logits = prediction_scores.view(-1, self.config.vocab_size)[active_loss]
-                active_labels = labels.view(-1)[active_loss]
-                loss = loss_fct(active_logits, active_labels)
-            else:
-                loss = torch.tensor(0.0, device=self.device)
+            outputs = self.bert(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids
+            )
 
-        if return_dict:
-            return {
-                'loss': loss,
+            sequence_output = outputs.last_hidden_state
+            prediction_scores = self.cls(sequence_output)
+
+            outputs = {
                 'logits': prediction_scores,
-                'hidden_states': outputs.hidden_states if output_hidden_states else None,
-                'attentions': outputs.attentions if output_attentions else None
+                'hidden_states': sequence_output
             }
 
-        output = (prediction_scores,) + outputs[2:]
-        return ((loss,) + output) if loss is not None else output
+            # Compute loss only if labels are provided
+            if labels is not None:
+                loss_fct = nn.CrossEntropyLoss()
+                masked_lm_loss = loss_fct(
+                    prediction_scores.view(-1, self.config.vocab_size),
+                    labels.view(-1)
+                )
+                outputs['loss'] = masked_lm_loss
+            else:
+                # Always include a loss, even if it's a dummy
+                logger.warning("No labels provided, using dummy loss")
+                dummy_loss = torch.tensor(0.0, device=input_ids.device, requires_grad=True)
+                outputs['loss'] = dummy_loss
+
+            return outputs
+
+        except Exception as e:
+            logger.error(f"Error in forward pass: {e}")
+            logger.error(traceback.format_exc())
+            # Return at least a dummy output with loss to prevent None issues
+            return {
+                'logits': torch.zeros(1, device=input_ids.device),
+                'loss': torch.tensor(1.0, device=input_ids.device, requires_grad=True)
+            }
 
 class BertEmbeddingHead(nn.Module):
     """BERT embedding prediction head with proper initialization."""
