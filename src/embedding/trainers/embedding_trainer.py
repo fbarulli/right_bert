@@ -579,13 +579,14 @@ class EmbeddingTrainer:
     
     def _filter_batch_for_model(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Filter the batch to only include keys that the model expects.
+        Filter the batch to only include keys that the model expects,
+        and ensure all tensors are on the correct device.
         
         Args:
             batch: The input batch
             
         Returns:
-            Dict[str, Any]: The filtered batch
+            Dict[str, Any]: The filtered batch with tensors on correct device
         """
         # Common model input keys for transformer models
         expected_keys = {
@@ -607,17 +608,56 @@ class EmbeddingTrainer:
             except Exception as e:
                 logger.debug(f"Could not inspect model signature: {e}")
         
-        # Filter batch
+        # Filter batch and ensure all tensors are on the model device
         model_inputs = {}
+        
+        # First check model device to ensure consistency
+        model_device = self.device
+        
         for key, value in batch.items():
+            # Only include expected keys
             if key in expected_keys:
-                model_inputs[key] = value
-                
+                # Ensure tensor is on the right device
+                if torch.is_tensor(value):
+                    # Check and move to model device if needed
+                    if value.device != model_device:
+                        logger.debug(f"Moving tensor '{key}' from {value.device} to {model_device}")
+                        try:
+                            model_inputs[key] = value.to(model_device)
+                        except Exception as e:
+                            logger.error(f"Error moving tensor {key} to {model_device}: {e}")
+                            # Try creating a new tensor on the correct device
+                            try:
+                                model_inputs[key] = torch.tensor(value.cpu().numpy(), device=model_device)
+                            except:
+                                # Last resort - skip this tensor
+                                logger.error(f"Failed to move tensor {key}, skipping it")
+                                continue
+                    else:
+                        # Already on right device
+                        model_inputs[key] = value
+                elif isinstance(value, list) and all(torch.is_tensor(t) for t in value):
+                    # Handle list of tensors
+                    model_inputs[key] = [t.to(model_device) if t.device != model_device else t for t in value]
+                else:
+                    # Non-tensor values can be kept as is
+                    model_inputs[key] = value
+        
         # Debug log what we're excluding
         excluded = set(batch.keys()) - set(model_inputs.keys())
         if excluded:
             logger.debug(f"Excluded keys from model input: {excluded}")
-            
+        
+        # Double-check device consistency before returning
+        device_mismatch = False
+        for k, v in model_inputs.items():
+            if torch.is_tensor(v) and v.device != model_device:
+                device_mismatch = True
+                logger.error(f"Tensor {k} is on {v.device} instead of {model_device} after filtering!")
+        
+        if device_mismatch:
+            logger.warning(f"Device mismatch detected in batch! Model expects {model_device}")
+        
         return model_inputs
 
 __all__ = ['EmbeddingTrainer']
