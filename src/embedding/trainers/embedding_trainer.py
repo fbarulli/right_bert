@@ -296,279 +296,328 @@ class EmbeddingTrainer:
                 
             # Forward pass with potential mixed precision
             try:
-                if hasattr(self, 'amp_manager') and self.amp_manager and self.amp_manager.is_enabled():
-                    with self.amp_manager.autocast():
+                # Filter batch to only include keys expected by the modelself.amp_manager.is_enabled():
+                model_inputs = self._filter_batch_for_model(batch)
                         outputs = self.model(**batch)
-                else:
-                    outputs = self.model(**batch)
-                    
+                else:sattr(self, 'amp_manager') and self.amp_manager and self.amp_manager.is_enabled():
+                    outputs = self.model(**batch)t():
+                        outputs = self.model(**model_inputs)
                 # Get loss from outputs
                 if isinstance(outputs, dict) and 'loss' in outputs:
                     loss = outputs['loss']
-                else:
+                else: loss from outputs
                     # Compute loss using metrics manager if possible
                     if hasattr(self, 'metrics_manager') and self.metrics_manager:
                         try:
                             metrics = self.metrics_manager.compute_embedding_metrics(outputs, batch)
                             loss = torch.tensor(metrics['loss'], device=self.device)
                         except Exception as metrics_err:
-                            logger.error(f"Error computing metrics: {metrics_err}")
+                            logger.error(f"Error computing metrics: {metrics_err}")s(outputs, batch)
                             # Default behavior - assume outputs[0] is loss if it's a tuple
                             if isinstance(outputs, tuple) and len(outputs) > 0:
-                                loss = outputs[0]
-                            else:
+                                loss = outputs[0]computing metrics: {metrics_err}")
+                            else:ault behavior - assume outputs[0] is loss if it's a tuple
                                 logger.error("Cannot determine loss value from outputs")
                                 # Create a dummy loss to avoid crashing - training will be bad but not crash
                                 loss = torch.tensor(1.0, device=self.device, requires_grad=True)
-                    else:
-                        # Default behavior - assume outputs[0] is loss
-                        loss = outputs[0]
-                        
-                # Check that loss is not None before proceeding
-                if loss is None:
+                    else:       logger.error("Cannot determine loss value from outputs")
+                        # Default behavior - assume outputs[0] is lossg - training will be bad but not crash
+                        loss = outputs[0]rch.tensor(1.0, device=self.device, requires_grad=True)
+                        :
+                # Check that loss is not None before proceedingis loss
+                if loss is None:utputs[0]
                     logger.error("Model returned None loss - skipping this batch")
-                    continue
-                
-                # Additional safety check
+                    continue loss is not None before proceeding
+                if loss is None:
+                # Additional safety checketurned None loss - skipping this batch")
                 if not isinstance(loss, torch.Tensor):
                     logger.error(f"Loss is not a tensor (got {type(loss)}) - skipping this batch")
-                    continue
-                
-                # Backward pass and optimization
+                    continue safety check
+                if not isinstance(loss, torch.Tensor):
+                # Backward pass and optimization tensor (got {type(loss)}) - skipping this batch")
                 self.optimizer.zero_grad()
                 
-                if self.amp_manager:
+                if self.amp_manager:optimization
                     # Safe backward step with amp manager
                     try:
                         self.amp_manager.backward_step(loss, self.model, self.optimizer)
-                    except Exception as amp_err:
+                    except Exception as amp_err:p manager
                         logger.error(f"Error in AMP backward_step: {amp_err}")
-                        # Fallback to normal backward
+                        # Fallback to normal backwardp(loss, self.model, self.optimizer)
                         if isinstance(loss, torch.Tensor) and loss.requires_grad:
-                            loss.backward()
+                            loss.backward()r in AMP backward_step: {amp_err}")
                             # Clip gradients if specified
-                            grad_clip = self.config['training'].get('grad_clip')
-                            if grad_clip:
+                            grad_clip = self.config['training'].get('grad_clip'):
+                            if grad_clip:()
                                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
-                            self.optimizer.step()
-                else:
-                    # Normal backward pass
-                    loss.backward()
+                            self.optimizer.step()ig['training'].get('grad_clip')
+                else:       if grad_clip:
+                    # Normal backward passtils.clip_grad_norm_(self.model.parameters(), grad_clip)
+                    loss.backward()timizer.step()
                     # Clip gradients if specified
                     grad_clip = self.config['training'].get('grad_clip')
-                    if grad_clip:
+                    if grad_clip:()
                         torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
-                    self.optimizer.step()
+                    self.optimizer.step()ig['training'].get('grad_clip')
+                    if grad_clip:
+                # Update schedulertils.clip_grad_norm_(self.model.parameters(), grad_clip)
+                self.scheduler.step()ep()
                     
-                # Update scheduler
-                self.scheduler.step()
-                
-                # Update metrics
+                # Update metricser
                 epoch_loss += loss.item()
                 # TODO: Add accuracy calculation if needed
-                
-                # Update progress bar
+                # Update metrics
+                # Update progress barem()
                 progress_bar.set_postfix(loss=loss.item())
                 
                 # Log metrics every N steps
                 log_interval = self.config['training'].get('log_interval', 50)
                 if self.global_step % log_interval == 0:
                     # Compute batch metrics
-                    if self.metrics_manager:
+                    if self.metrics_manager:training'].get('log_interval', 50)
                         batch_metrics = self.metrics_manager.compute_embedding_metrics(outputs, batch)
-                    else:
+                    else:pute batch metrics
                         batch_metrics = {'loss': loss.item()}
-                        
+                        batch_metrics = self.metrics_manager.compute_embedding_metrics(outputs, batch)
                     # Log metrics
-                    self.metrics_logger.log_metrics(
+                    self.metrics_logger.log_metrics(s.item()}
                         batch_metrics, 
                         phase=f'train_step',
-                        step=self.global_step
-                    )
-                    
-                    # Update WandB
+                        step=self.global_stepetrics(
+                    )   batch_metrics, 
+                        phase=f'train_step',
+                    # Update WandBglobal_step
                     if self.wandb_manager and self.wandb_manager.is_enabled():
                         self.wandb_manager.log_metrics(batch_metrics, step=self.global_step)
-                
-                # Increment counters
-                self.global_step += 1
+                    # Update WandB
+                # Increment countersnager and self.wandb_manager.is_enabled():
+                self.global_step += 1nager.log_metrics(batch_metrics, step=self.global_step)
                 num_batches += 1
-                
-            except Exception as e:
+                # Increment counters
+            except Exception as e:= 1
                 logger.error(f"Error during forward/backward pass: {e}")
                 continue
-            
-        # Compute epoch metrics
+            except Exception as e:
+        # Compute epoch metricsError during forward/backward pass: {e}")
         avg_loss = epoch_loss / num_batches if num_batches > 0 else float('inf')
-        
-        return {
-            'loss': avg_loss,
+            
+        return {e epoch metrics
+            'loss': avg_loss, / num_batches if num_batches > 0 else float('inf')
             'accuracy': epoch_accuracy / num_batches if num_batches > 0 else 0.0,
             'lr': self.scheduler.get_last_lr()[0]
-        }
-    
-    def validate(self) -> Dict[str, float]:
+        }   'loss': avg_loss,
+            'accuracy': epoch_accuracy / num_batches if num_batches > 0 else 0.0,
+    def validate(self) -> Dict[str, float]:r()[0]
         """
         Run validation.
-        
+        validate(self) -> Dict[str, float]:
         Returns:
             Dict[str, float]: Validation metrics
         """
         self.model.eval()
-        
+            Dict[str, float]: Validation metrics
         epoch_loss = 0.0
         epoch_accuracy = 0.0
         num_batches = 0
         all_metrics = {}
-        
+        epoch_accuracy = 0.0
         progress_bar = tqdm(
             self.val_loader, 
             desc=f"Epoch {self.current_epoch+1} [Val]",
-            leave=False
-        )
-        
+            leave=Falsetqdm(
+        )   self.val_loader, 
+            desc=f"Epoch {self.current_epoch+1} [Val]",
         with torch.no_grad():
             for batch in progress_bar:
                 # Move batch to device
                 if self.batch_manager:
                     batch = self.batch_manager.prepare_batch(batch)
-                else:
+                else:e batch to device
                     batch = {k: v.to(self.device) for k, v in batch.items()}
-                    
-                # Forward pass with potential mixed precision
-                if self.amp_manager and self.amp_manager.is_enabled():
-                    with self.amp_manager.autocast():
-                        outputs = self.model(**batch)
+                    batch = self.batch_manager.prepare_batch(batch)
+                # Filter batch keys for model
+                model_inputs = self._filter_batch_for_model(batch)ems()}
+                
+                # Forward pass with potential mixed precisionrecision
+                if self.amp_manager and self.amp_manager.is_enabled():lf.amp_manager and self.amp_manager.is_enabled():
+                    with self.amp_manager.autocast():t():
+                        outputs = self.model(**model_inputs)    outputs = self.model(**batch)
                 else:
-                    outputs = self.model(**batch)
+                    outputs = self.model(**model_inputs)
                     
-                # Get loss from outputs
+                # Get loss from outputs loss from outputs
                 if isinstance(outputs, dict) and 'loss' in outputs:
                     loss = outputs['loss']
                 else:
                     # Compute loss using metrics manager if possible
-                    if self.metrics_manager:
-                        metrics = self.metrics_manager.compute_embedding_metrics(outputs, batch)
-                        loss = torch.tensor(metrics['loss'], device=self.device)
+                    if self.metrics_manager:elf.metrics_manager:
+                        metrics = self.metrics_manager.compute_embedding_metrics(outputs, batch)cs_manager.compute_embedding_metrics(outputs, batch)
+                        loss = torch.tensor(metrics['loss'], device=self.device)'loss'], device=self.device)
                         
                         # Update all metrics
-                        for k, v in metrics.items():
-                            if k not in all_metrics:
+                        for k, v in metrics.items():ms():
+                            if k not in all_metrics:   if k not in all_metrics:
                                 all_metrics[k] = 0.0
-                            all_metrics[k] += v
-                    else:
-                        # Default behavior - assume outputs[0] is loss
-                        loss = outputs[0]
+                            all_metrics[k] += v] += v
+                    else::
+                        # Default behavior - assume outputs[0] is lossr - assume outputs[0] is loss
+                        loss = outputs[0]        loss = outputs[0]
                         
                 epoch_loss += loss.item()
                 
-                # Update progress bar
-                progress_bar.set_postfix(loss=loss.item())
+                # Update progress bars bar
+                progress_bar.set_postfix(loss=loss.item())progress_bar.set_postfix(loss=loss.item())
                 
                 num_batches += 1
-                
+                        
         # Compute overall metrics
-        avg_loss = epoch_loss / num_batches if num_batches > 0 else float('inf')
+        avg_loss = epoch_loss / num_batches if num_batches > 0 else float('inf')avg_loss = epoch_loss / num_batches if num_batches > 0 else float('inf')
         
         metrics = {'loss': avg_loss}
         
-        # Add other metrics if available
-        for k, v in all_metrics.items():
-            metrics[k] = v / num_batches if num_batches > 0 else 0.0
+        # Add other metrics if availabled other metrics if available
+        for k, v in all_metrics.items():l_metrics.items():
+            metrics[k] = v / num_batches if num_batches > 0 else 0.0        metrics[k] = v / num_batches if num_batches > 0 else 0.0
             
-        return metrics
+        return metrics metrics
     
     def log_epoch_results(
         self, 
-        epoch: int, 
-        train_results: Dict[str, float], 
-        val_results: Dict[str, float]
-    ) -> None:
+        epoch: int,  int, 
+        train_results: Dict[str, float], in_results: Dict[str, float], 
+        val_results: Dict[str, float]str, float]
+    ) -> None: None:
         """
         Log epoch results.
         
         Args:
-            epoch: Current epoch number
-            train_results: Training results
+            epoch: Current epoch number epoch: Current epoch number
+            train_results: Training results: Training results
             val_results: Validation results
         """
-        # Prepare metrics
-        train_metrics = {f'train_{k}': v for k, v in train_results.items()}
-        val_metrics = {f'val_{k}': v for k, v in val_results.items()}
+        # Prepare metrics# Prepare metrics
+        train_metrics = {f'train_{k}': v for k, v in train_results.items()}f'train_{k}': v for k, v in train_results.items()}
+        val_metrics = {f'val_{k}': v for k, v in val_results.items()}s.items()}
         
         # Combine metrics
         combined_metrics = {**train_metrics, **val_metrics}
-        combined_metrics['epoch'] = epoch + 1
-        combined_metrics['best_val_loss'] = self.best_val_loss
-        combined_metrics['early_stop_counter'] = self.early_stop_counter
+        combined_metrics['epoch'] = epoch + 1combined_metrics['epoch'] = epoch + 1
+        combined_metrics['best_val_loss'] = self.best_val_loss['best_val_loss'] = self.best_val_loss
+        combined_metrics['early_stop_counter'] = self.early_stop_counterrics['early_stop_counter'] = self.early_stop_counter
         
         # Log to console
         logger.info(
             f"Epoch {epoch+1} | "
-            f"Train Loss: {train_results['loss']:.4f} | "
-            f"Val Loss: {val_results['loss']:.4f} | "
-            f"Best Val Loss: {self.best_val_loss:.4f} | "
-            f"LR: {train_results.get('lr', 0):.6f}"
+            f"Train Loss: {train_results['loss']:.4f} | "f} | "
+            f"Val Loss: {val_results['loss']:.4f} | "   f"Val Loss: {val_results['loss']:.4f} | "
+            f"Best Val Loss: {self.best_val_loss:.4f} | "    f"Best Val Loss: {self.best_val_loss:.4f} | "
+            f"LR: {train_results.get('lr', 0):.6f}"s.get('lr', 0):.6f}"
         )
         
         # Log to metrics logger
-        self.metrics_logger.log_metrics(
-            combined_metrics,
-            phase=f'epoch_{epoch+1}',
-            step=self.global_step
+        self.metrics_logger.log_metrics(etrics(
+            combined_metrics,   combined_metrics,
+            phase=f'epoch_{epoch+1}',    phase=f'epoch_{epoch+1}',
+            step=self.global_stepglobal_step
         )
         
-        # Log to WandB
-        if self.wandb_manager and self.wandb_manager.is_enabled():
-            self.wandb_manager.log_metrics(combined_metrics, step=self.global_step)
+        # Log to WandB    # Log to WandB
+        if self.wandb_manager and self.wandb_manager.is_enabled():b_manager.is_enabled():
+            self.wandb_manager.log_metrics(combined_metrics, step=self.global_step) self.wandb_manager.log_metrics(combined_metrics, step=self.global_step)
     
-    def save_model(self, tag: str) -> None:
+    def save_model(self, tag: str) -> None:save_model(self, tag: str) -> None:
         """
         Save model checkpoint.
         
-        Args:
+        Args::
             tag: Tag to identify the checkpoint
         """
         try:
             from src.common.managers import get_model_manager
             model_manager = get_model_manager()
             
-            checkpoint_dir = Path(self.config['output']['dir']) / 'checkpoints'
-            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            checkpoint_dir = Path(self.config['output']['dir']) / 'checkpoints'lf.config['output']['dir']) / 'checkpoints'
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)ue)
             
             # Define checkpoint path
-            checkpoint_path = checkpoint_dir / f"{tag}.pt"
+            checkpoint_path = checkpoint_dir / f"{tag}.pt"g}.pt"
             
-            # Save model with appropriate manager if available
-            if hasattr(model_manager, 'save_model'):
-                model_manager.save_model(self.model, checkpoint_path)
+            # Save model with appropriate manager if availablee model with appropriate manager if available
+            if hasattr(model_manager, 'save_model'):e_model'):
+                model_manager.save_model(self.model, checkpoint_path)save_model(self.model, checkpoint_path)
             else:
                 # Fallback - save directly
                 checkpoint = {
-                    'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': self.optimizer.state_dict(),
-                    'scheduler_state_dict': self.scheduler.state_dict(),
-                    'epoch': self.current_epoch,
-                    'global_step': self.global_step,
-                    'best_val_loss': self.best_val_loss,
-                    'config': self.config
+                    'model_state_dict': self.model.state_dict(),el.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),imizer.state_dict(),
+                    'scheduler_state_dict': self.scheduler.state_dict(),er.state_dict(),
+                    'epoch': self.current_epoch,_epoch,
+                    'global_step': self.global_step,   'global_step': self.global_step,
+                    'best_val_loss': self.best_val_loss,,
+                    'config': self.config    'config': self.config
                 }
-                torch.save(checkpoint, checkpoint_path)
+                torch.save(checkpoint, checkpoint_path)    torch.save(checkpoint, checkpoint_path)
                 
-            logger.info(f"Model saved to {checkpoint_path}")
+            logger.info(f"Model saved to {checkpoint_path}")f"Model saved to {checkpoint_path}")
             
             # Save metadata
             metadata = {
-                'epoch': self.current_epoch,
-                'global_step': self.global_step,
+                'epoch': self.current_epoch,nt_epoch,
+                'global_step': self.global_step,   'global_step': self.global_step,
                 'best_val_loss': float(self.best_val_loss),
                 'time': time.time()
             }
-            with open(checkpoint_dir / f"{tag}_metadata.json", 'w') as f:
+            with open(checkpoint_dir / f"{tag}_metadata.json", 'w') as f:nt_dir / f"{tag}_metadata.json", 'w') as f:
                 json.dump(metadata, f, indent=2)
                 
-        except Exception as e:
-            logger.error(f"Error saving model: {str(e)}")
-            logger.error("Stack trace:", exc_info=True)
+        except Exception as e:        except Exception as e:
+            logger.error(f"Error saving model: {str(e)}")l(self, batch: Dict[str, Any]) -> Dict[str, Any]:or saving model: {str(e)}")
+            logger.error("Stack trace:", exc_info=True)        """            logger.error("Stack trace:", exc_info=True)
 
+
+
+__all__ = ['EmbeddingTrainer']
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+__all__ = ['EmbeddingTrainer']        return model_inputs                        logger.debug(f"Excluded keys from model input: {excluded}")
+
+
+        if excluded:        excluded = set(batch.keys()) - set(model_inputs.keys())        # Debug log what we're excluding                                model_inputs[key] = value            if key in expected_keys:        for key, value in batch.items():        model_inputs = {}        # Filter batch                        logger.debug(f"Could not inspect model signature: {e}")            except Exception as e:                expected_keys.update(set(signature.parameters.keys()))                # Update expected_keys with actual parameters from model                signature = inspect.signature(self.model.forward)                # Get parameter names from model's forward method            try:            import inspect        if hasattr(self.model, 'forward'):        # Check if we have model forward signature information                }            'labels'            'position_ids',            'token_type_ids',            'attention_mask',             'input_ids',         expected_keys = {        # Common model input keys for transformer models        """            Dict[str, Any]: The filtered batch        Returns:                        batch: The input batch        Args:                Filter the batch to only include keys that the model expects.
 __all__ = ['EmbeddingTrainer']

@@ -120,6 +120,36 @@ class BatchManager(BaseManager):
             device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
             return {k: v.to(device) if hasattr(v, 'to') else v for k, v in batch.items()}
 
+    def _get_device(self) -> torch.device:
+        """
+        Get the appropriate device for tensor operations.
+        
+        Returns:
+            torch.device: The device to use (CPU or CUDA)
+        """
+        try:
+            self.ensure_initialized()
+            
+            # Check if we already stored the device
+            if hasattr(self._local, 'device') and self._local.device is not None:
+                return self._local.device
+                
+            # Get device from CUDA manager
+            if self._cuda_manager.is_available():
+                device = self._cuda_manager.get_device()
+            else:
+                device = torch.device('cpu')
+                
+            # Cache the device
+            self._local.device = device
+            
+            return device
+        except Exception as e:
+            logger.error(f"Error getting device: {str(e)}")
+            logger.error(traceback.format_exc())
+            # Fall back to CPU in case of errors
+            return torch.device('cpu')
+
     def get_batch_size(self, batch: Union[Dict[str, torch.Tensor], DataLoader]) -> int:
         """
         Get batch size from batch dict or dataloader.
