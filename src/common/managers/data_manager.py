@@ -1,4 +1,3 @@
-
 # src/common/managers/data_manager.py
 from __future__ import annotations
 import torch
@@ -17,6 +16,7 @@ from src.common.managers.base_manager import BaseManager
 from src.common.managers.tokenizer_manager import TokenizerManager
 from src.common.managers.dataloader_manager import DataLoaderManager
 from src.embedding.dataset import EmbeddingDataset
+from src.common.fix_dataloader import fix_dataloader_config
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,9 @@ class DataManager(BaseManager):
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         try:
             super()._initialize_process_local(config)
-            if not self._tokenizer_manager.is_initialized():
-                raise RuntimeError("TokenizerManager must be initialized before DataManager")
-            if not self._dataloader_manager.is_initialized():
-                raise RuntimeError("DataLoaderManager must be initialized before DataManager")
+            # Use the base manager's dependency validation
+            self._validate_dependency(self._tokenizer_manager, "TokenizerManager")
+            self._validate_dependency(self._dataloader_manager, "DataLoaderManager")
             logger.info(f"DataManager initialized for process {self._local.pid}")
         except Exception as e:
             logger.error(f"Failed to initialize DataManager: {str(e)}")
@@ -63,59 +62,80 @@ class DataManager(BaseManager):
             model_type=config['model']['stage']
         )
 
-    def create_dataset(
-        self,
-        config: Dict[str, Any],
-        split: str = 'train'
-    ) -> Dataset:
-        """
-        Create a dataset instance.
-
+    def create_dataset(self, config: Dict[str, Any], split: str = 'train') -> torch.utils.data.Dataset:
+        """Create a dataset based on the configuration.
+        
         Args:
-            config: Configuration dictionary
-            split: Data split ('train' or 'val')
-
+            config: The configuration dictionary
+            split: The dataset split ('train' or 'val')
+            
         Returns:
-            Dataset: The created dataset
-
-        Raises:
-            ValueError: If split is invalid or model stage is unsupported
+            torch.utils.data.Dataset: The created dataset
         """
         self.ensure_initialized()
-
-        if split not in ['train', 'val']:
-            raise ValueError(f"Invalid split: {split}")
-
+        
         try:
-            tokenizer = self.get_tokenizer(config)
-            data_config = self.get_config_section(config, 'data')
-
-            if config['model']['stage'] == 'embedding':
-                dataset = EmbeddingDataset(
-                    data_path=Path(data_config['csv_path']),
-                    tokenizer=tokenizer,
-                    split=split,
-                    train_ratio=float(data_config['train_ratio']),
-                    max_length=data_config['max_length'],
-                    mask_prob=data_config['embedding_mask_probability'],
-                    max_predictions=data_config['max_predictions'],
-                    max_span_length=data_config['max_span_length']
-                )
-            elif config['model']['stage'] == 'classification':
-                from src.classification.dataset import ClassificationDataset  # Conditional import
-                dataset = ClassificationDataset(
-                    data_path=Path(data_config['csv_path']),
-                    tokenizer=tokenizer,
-                    split=split,
-                    train_ratio=float(data_config['train_ratio']),
-                    max_length=data_config['max_length']
-                )
+            tokenizer = self._tokenizer_manager.get_worker_tokenizer(os.getpid())
+            logger.info(f"Creating {split} dataset for worker {os.getpid()}")
+            
+            # Get data configuration
+            data_config = config.get('data', {})
+            model_name = config['model'].get('name', '')
+            dataset_type = data_config.get('dataset_type', 'embedding')
+            
+            if dataset_type == 'embedding':
+                from src.embedding.dataset import EmbeddingDataset
+                
+                # Use the from_config method instead of direct instantiation
+                logger.debug(f"Creating EmbeddingDataset for split: {split}")
+                
+                # Check if the from_config class method exists
+                if hasattr(EmbeddingDataset, 'from_config'):
+                    dataset = EmbeddingDataset.from_config(
+                        config=config,
+                        tokenizer=tokenizer,
+                        split=split
+                    )
+                else:
+                    # Fallback to older direct initialization if needed
+                    # Inspect the actual __init__ signature to determine parameters
+                    import inspect
+                    init_signature = inspect.signature(EmbeddingDataset.__init__)
+                    
+                    if 'config' in init_signature.parameters:
+                        # Create config for constructor
+                        from src.embedding.dataset import EmbeddingDatasetConfig
+                        from pathlib import Path
+                        
+                        dataset_config = EmbeddingDatasetConfig(
+                            data_path=Path(data_config.get('csv_path', 'data/embedding.csv')),
+                            max_length=data_config.get('max_length', 128),
+                            split=split,
+                            train_ratio=data_config.get('train_ratio', 0.8),
+                            mask_prob=data_config.get('embedding_mask_probability', 0.15),
+                            max_predictions=data_config.get('max_predictions', 20),
+                            max_span_length=data_config.get('max_span_length', 3),
+                            log_level=config['training'].get('log_level', 'log'),
+                            cache_size=config['training'].get('cache_size', 1000),
+                            tensor_pool_size=config['training'].get('tensor_pool_size', 1000),
+                            gc_threshold=config['training'].get('gc_threshold', 0.8)
+                        )
+                        
+                        dataset = EmbeddingDataset(tokenizer=tokenizer, config=dataset_config)
+                    else:
+                        # Assume direct initialization with named parameters
+                        dataset = EmbeddingDataset(
+                            tokenizer=tokenizer,
+                            split=split,
+                            data_path=data_config.get('path', 'data/embedding'),
+                            max_length=data_config.get('max_length', 128)
+                        )
+                
+                return dataset
+                
             else:
-                raise ValueError(f"Unsupported model stage: {config['model']['stage']}")
-
-            logger.debug(f"Created {split} dataset with {len(dataset)} examples")
-            return dataset
-
+                raise ValueError(f"Unsupported dataset type: {dataset_type}")
+                
         except Exception as e:
             logger.error(f"Error creating dataset: {str(e)}")
             logger.error(traceback.format_exc())
@@ -167,38 +187,68 @@ class DataManager(BaseManager):
             logger.error(traceback.format_exc())
             raise
 
-    def create_dataloaders(
-        self,
-        config: Dict[str, Any]
-    ) -> Tuple[DataLoader, DataLoader, Dataset, Dataset]:
+    def create_dataloaders(self, config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader, Dataset, Dataset]:
         """
-        Create train and validation dataloaders and datasets.
-
+        Create train and validation data loaders.
+        
         Args:
             config: Configuration dictionary
-
+        
         Returns:
-            Tuple containing:
-            - Train dataloader
-            - Validation dataloader
-            - Train dataset
-            - Validation dataset
+            Tuple[DataLoader, DataLoader, Dataset, Dataset]: Train loader, validation loader, 
+                                                             train dataset, validation dataset
         """
         self.ensure_initialized()
-
+        
+        # Apply fixes to config to avoid pickle errors
+        config = fix_dataloader_config(config)
+        
         try:
-            # Create datasets
-            train_dataset = self.create_dataset(config, split='train')
-            val_dataset = self.create_dataset(config, split='val')
-
-            # Create dataloaders
-            train_loader = self.create_dataloader(config, dataset=train_dataset, split='train')
-            val_loader = self.create_dataloader(config, dataset=val_dataset, split='val')
-
+            # First get the datasets
+            train_dataset = self.create_dataset(config, "train")
+            val_dataset = self.create_dataset(config, "val")
+            
+            # Get batch size
+            batch_size = config['training'].get('batch_size', 16)
+            
+            # Determine number of workers (now 0 after fix_dataloader_config)
+            num_workers = config['training'].get('num_workers', 0)
+            
+            # Get the dataloader manager from the factory
+            from src.common.managers import get_dataloader_manager
+            dataloader_manager = get_dataloader_manager()
+            
+            # Create the dataloaders
+            train_loader = dataloader_manager.create_dataloader(
+                dataset=train_dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=num_workers,
+                pin_memory=config['training'].get('pin_memory', False),
+                persistent_workers=False  # Set to False for safety
+            )
+            
+            val_loader = dataloader_manager.create_dataloader(
+                dataset=val_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+                pin_memory=config['training'].get('pin_memory', False),
+                persistent_workers=False  # Set to False for safety
+            )
+            
+            logger.info(
+                f"DataLoaders created with:\n"
+                f" - Batch size: {batch_size}\n"
+                f" - Workers: {num_workers}\n"
+                f" - Train samples: {len(train_dataset)}\n"
+                f" - Val samples: {len(val_dataset)}"
+            )
+            
             return train_loader, val_loader, train_dataset, val_dataset
-
+            
         except Exception as e:
-            logger.error(f"Error creating dataloaders: {str(e)}")
+            logger.error(f"Failed to create dataloaders: {str(e)}")
             logger.error(traceback.format_exc())
             raise
 

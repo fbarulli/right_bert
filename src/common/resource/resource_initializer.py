@@ -56,20 +56,20 @@ class ResourceInitializer:
             optuna_manager: Optional injected OptunaManager instance
         """
         # Store injected managers (or None if not provided)
-        self._cuda_manager = cuda_manager
-        self._amp_manager = amp_manager
-        self._data_manager = data_manager
-        self._dataloader_manager = dataloader_manager
-        self._tensor_manager = tensor_manager
-        self._tokenizer_manager = tokenizer_manager
-        self._model_manager = model_manager
-        self._metrics_manager = metrics_manager
-        self._parameter_manager = parameter_manager
-        self._storage_manager = storage_manager
-        self._directory_manager = directory_manager
-        self._worker_manager = worker_manager
-        self._wandb_manager = wandb_manager
-        self._optuna_manager = optuna_manager
+        self.cuda_manager = cuda_manager
+        self.amp_manager = amp_manager
+        self.data_manager = data_manager
+        self.dataloader_manager = dataloader_manager
+        self.tensor_manager = tensor_manager
+        self.tokenizer_manager = tokenizer_manager
+        self.model_manager = model_manager
+        self.metrics_manager = metrics_manager
+        self.parameter_manager = parameter_manager
+        self.storage_manager = storage_manager
+        self.directory_manager = directory_manager
+        self.worker_manager = worker_manager
+        self.wandb_manager = wandb_manager
+        self.optuna_manager = optuna_manager
 
         # Store initialization order (will populate lazily in initialize_process)
         self._initialization_order = []
@@ -105,42 +105,30 @@ class ResourceInitializer:
             ResourceInitializer._config = config
 
             # Populate managers if not injected
-            self._cuda_manager = self._cuda_manager or CUDAManager()
-            self._amp_manager = self._amp_manager or AMPManager()
-            self._data_manager = self._data_manager or DataManager()
-            self._dataloader_manager = self._dataloader_manager or DataLoaderManager()
-            self._tensor_manager = self._tensor_manager or TensorManager()
-            self._tokenizer_manager = self._tokenizer_manager or TokenizerManager()
-            self._model_manager = self._model_manager or ModelManager()
-            self._metrics_manager = self._metrics_manager or MetricsManager()
-            self._parameter_manager = self._parameter_manager or ParameterManager()
-            self._storage_manager = self._storage_manager or StorageManager()
-            self._directory_manager = self._directory_manager or DirectoryManager()
-            self._worker_manager = self._worker_manager or WorkerManager()
-            self._wandb_manager = self._wandb_manager or (WandbManager() if config.get('wandb') else None)
-            self._optuna_manager = self._optuna_manager or (OptunaManager() if config.get('optuna') else None)
+            self.cuda_manager = self.cuda_manager or CUDAManager()
+            self.amp_manager = self.amp_manager or AMPManager()
+            self.data_manager = self.data_manager or DataManager()
+            self.dataloader_manager = self.dataloader_manager or DataLoaderManager()
+            self.tensor_manager = self.tensor_manager or TensorManager()
+            self.tokenizer_manager = self.tokenizer_manager or TokenizerManager()
+            self.model_manager = self.model_manager or ModelManager()
+            self.metrics_manager = self.metrics_manager or MetricsManager()
+            self.parameter_manager = self.parameter_manager or ParameterManager()
+            self.storage_manager = self.storage_manager or StorageManager()
+            self.directory_manager = self.directory_manager or DirectoryManager()
+            self.worker_manager = self.worker_manager or WorkerManager()
+            self.wandb_manager = self.wandb_manager or (WandbManager() if config.get('wandb') else None)
+            self.optuna_manager = self.optuna_manager or (OptunaManager() if config.get('optuna') else None)
 
-            # Define initialization order
-            self._initialization_order = [
-                ('CUDA', self._cuda_manager),
-                ('AMP', self._amp_manager),
-                ('Data', self._data_manager),
-                ('DataLoader', self._dataloader_manager),
-                ('Tensor', self._tensor_manager),
-                ('Tokenizer', self._tokenizer_manager),
-                ('Model', self._model_manager),
-                ('Metrics', self._metrics_manager),
-                ('Parameter', self._parameter_manager),
-                ('Directory', self._directory_manager),
-                ('Storage', self._storage_manager)
-            ]
-            if self._wandb_manager:
-                self._initialization_order.append(('WandB', self._wandb_manager))
-            if self._optuna_manager:
-                self._initialization_order.append(('Optuna', self._optuna_manager))
-            self._initialization_order.append(('Worker', self._worker_manager))
-
-            # Initialize managers in order
+            # Core managers first
+            if self.cuda_manager:
+                self.cuda_manager.initialize_process_local()
+                
+            # Second level managers
+            if self.amp_manager:
+                self.amp_manager.initialize_process_local()
+                
+            # Initialize other managers
             for name, manager in self._initialization_order:
                 try:
                     logger.debug(f"Initializing {name} manager")

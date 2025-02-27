@@ -22,6 +22,7 @@ training:
   max_grad_norm: 1.0
   num_trials: 10
   n_jobs: 2
+  
   n_startup_trials: 5
   study_name: "embedding_study"
   num_workers: 2
@@ -99,6 +100,7 @@ resources:
 output:
   dir: "outputs"
   storage_dir: "storage"  # ADDED THIS LINE
+  base_dir: "base_directory"  # ADD THIS LINE
   save_model: True
   save_optimizer: False
   save_scheduler: False
@@ -107,3 +109,9 @@ output:
       project: "my_project"
       api_key: ""
       tags: []
+
+paths:
+  model_dir: "base_directory/models"
+  output_dir: "base_directory/output"
+  data_dir: "base_directory/data"
+  cache_dir: "base_directory/cache"

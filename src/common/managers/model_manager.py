@@ -6,6 +6,7 @@ import torch
 import logging
 import gc
 import weakref
+import traceback
 from typing import Dict, Any, Optional
 from transformers import PreTrainedModel, BertConfig
 from transformers.utils import logging as transformers_logging
@@ -57,9 +58,9 @@ class ModelManager(BaseManager):
             tokenizer_manager: Injected TokenizerManager instance
             config: Optional configuration dictionary
         """
-        super().__init__(config)
         self._cuda_manager = cuda_manager
         self._tokenizer_manager = tokenizer_manager
+        super().__init__(config)
         self._local.process_models = {}
         self._local.model_refs = weakref.WeakValueDictionary()
 
@@ -73,10 +74,9 @@ class ModelManager(BaseManager):
         try:
             super()._initialize_process_local(config)
 
-            if not self._cuda_manager.is_initialized():
-                raise RuntimeError("CUDAManager must be initialized before ModelManager")
-            if not self._tokenizer_manager.is_initialized():
-                raise RuntimeError("TokenizerManager must be initialized before ModelManager")
+            # Validate dependencies using base manager method
+            self._validate_dependency(self._cuda_manager, "CUDAManager")
+            self._validate_dependency(self._tokenizer_manager, "TokenizerManager")
 
             logger.info(f"ModelManager initialized for process {self._local.pid}")
 
@@ -318,9 +318,11 @@ class ModelManager(BaseManager):
     def cleanup(self) -> None:
         """Clean up model manager resources."""
         try:
-            # Clear model caches
-            self._local.process_models.clear() #dependent on cuda_manager
-            self._local.model_refs.clear()
+            # Safely clear caches if they exist
+            if hasattr(self._local, 'process_models'):
+                self._local.process_models.clear()
+            if hasattr(self._local, 'model_refs'):
+                self._local.model_refs.clear()
 
             # Force garbage collection
             gc.collect()

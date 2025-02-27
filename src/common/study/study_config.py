@@ -37,12 +37,24 @@ class StudyConfig:
 
     def validate_config(self) -> None:
         """Validate study configuration."""
-        study_config = self.config.get('study', {})
-        model_config = self.config.get('model', {})
-        
-        # Add model_name to the config if it exists in model section
-        if 'name' in model_config:
-            self.config['model_name'] = model_config['name']
+        if not self.config:
+            raise ValueError("Configuration cannot be empty")
+            
+        # Validate study configuration
+        if not self.config['training']['study_name']:
+            raise ValueError("Missing required configuration field: training.study_name")
+            
+        # Map model name for backward compatibility
+        if 'model' in self.config and 'name' in self.config['model']:
+            self.config['model_name'] = self.config['model']['name']
+            
+        # Map training parameters for backward compatibility
+        training = self.config['training']
+        if 'batch_size' in training:
+            self.config['batch_size'] = training['batch_size']
+        if 'num_epochs' in training:
+            self.config['epochs'] = training['num_epochs']
+            training['epochs'] = training['num_epochs']
         
         # Validate using parameter manager
         self.param_manager.validate_config(self.config)

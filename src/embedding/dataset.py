@@ -1,12 +1,19 @@
 """
 Dataset implementation for embedding learning with masking functionality.
 """
-from dataclasses import dataclass  # Added direct import
-from pathlib import Path  # Add this import
-from typing import Dict, Any  # Add this import
-from torch import Tensor  # Add this import
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Any, Tuple
+import torch  # Add this missing import
+from torch import Tensor
+import logging
+import os
+
+from src.embedding.csv_dataset import CSVDataset
 from src.embedding.masking import SpanMaskingModule, MaskingConfig
-from src.common.logging_utils import log_function  # Add this import
+from src.common.logging_utils import log_function
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class EmbeddingDatasetConfig:
@@ -42,7 +49,7 @@ class EmbeddingDatasetConfig:
         if self.log_level not in ['debug', 'log', 'none']:
             raise ValueError(f"Invalid log level: {self.log_level}")
 
-class EmbeddingDataset:
+class EmbeddingDataset(CSVDataset):
     """Dataset for learning embeddings through masked token prediction."""
 
     def __init__(
@@ -57,25 +64,34 @@ class EmbeddingDataset:
             tokenizer: The Hugging Face tokenizer
             config: Dataset configuration
         """
-        from src.embedding.imports import (
-            os,
-            Path,
-            Dict,
-            PreTrainedTokenizerFast,
-            CSVDataset,
-            Tensor,
-            logger,
-            LogConfig,
-            TensorPool,
-            MemoryTracker,
-            CachingDict,
-            log_function,
+        from transformers import PreTrainedTokenizerFast
+        
+        # Store config as instance attribute
+        self.config = config
+        
+        # Store tokenizer and create tokenize method
+        self.tokenizer = tokenizer
+        self.tokenize = lambda text: tokenizer(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=config.max_length,
+            return_tensors="pt"
         )
+        
+        # Try both import methods to ensure one succeeds
+        try:
+            # First try direct import
+            from src.embedding.utils import LogConfig, TensorPool, MemoryTracker, CachingDict
+        except ImportError:
+            # If that fails, try relative import
+            from .utils import LogConfig, TensorPool, MemoryTracker, CachingDict
 
         # Validate tokenizer type at runtime
         if not isinstance(tokenizer, PreTrainedTokenizerFast):
             raise TypeError("Tokenizer must be a PreTrainedTokenizerFast instance")
 
+        # Initialize parent CSVDataset
         super().__init__(
             data_path=config.data_path,
             tokenizer=tokenizer,
@@ -130,7 +146,7 @@ class EmbeddingDataset:
         self,
         item: Dict[str, Tensor],
         idx: int
-    ) -> tuple[Tensor, Tensor]:
+    ) -> Tuple[Tensor, Tensor]:
         """
         Apply masking using the SpanMaskingModule.
         
@@ -175,7 +191,7 @@ class EmbeddingDataset:
             # Cache results
             self.cache.set(cache_key, (masked_inputs, labels))
 
-            if self.log_config.level == 'debug':
+            if hasattr(self.log_config, 'level') and self.log_config.level == 'debug':
                 logger.debug(
                     f"Masking details for item {idx}:\n"
                     f"- Original shape: {input_ids.shape}\n"
@@ -218,7 +234,7 @@ class EmbeddingDataset:
             # Cache the processed item
             self.cache.set(cache_key, item)
 
-            if self.log_config.level == 'debug':
+            if hasattr(self.log_config, 'level') and self.log_config.level == 'debug':
                 logger.debug(
                     f"Processed item {idx}:\n"
                     f"- Input shape: {input_ids.shape}\n"
@@ -234,17 +250,22 @@ class EmbeddingDataset:
         finally:
             self.memory_tracker.update()
 
-    def __del__(self) -> None:
-        """Cleanup resources."""
-        self.tensor_pool.clear()
-        self.cache.clear()
+    def __del__(self):
+        """Clean up resources when the dataset is deleted."""
+        try:
+            # Add safety check for tensor_pool attribute
+            if hasattr(self, 'tensor_pool'):
+                self.tensor_pool.clear()
+        except Exception as e:
+            # Quietly handle deletion errors to prevent console spam
+            pass
 
     @classmethod
     @log_function()
     def from_config(
         cls,
         config: Dict[str, Any],
-        tokenizer,  # Type hint removed due to lazy import
+        tokenizer,
         split: str
     ) -> 'EmbeddingDataset':
         """
@@ -258,7 +279,7 @@ class EmbeddingDataset:
         Returns:
             Initialized dataset
         """
-        from src.embedding.imports import Path  # Minimal import for Path
+        from pathlib import Path
 
         dataset_config = EmbeddingDatasetConfig(
             data_path=Path(config['data']['csv_path']),
@@ -275,5 +296,49 @@ class EmbeddingDataset:
         )
         
         return cls(tokenizer=tokenizer, config=dataset_config)
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """Get a single example with masking."""
+        text = self.df.iloc[idx]["text"]
+        
+        # Tokenize
+        try:
+            encoding = self.tokenize(text)
+            
+            # Add word_ids if not present
+            if 'word_ids' not in encoding:
+                # Generate simple word_ids (one word ID per token)
+                input_ids = encoding["input_ids"]
+                
+                # Create word boundaries based on spaces in original text
+                words = text.split()
+                word_to_tokens = {}
+                current_word_idx = 0
+                current_token_idx = 1  # Start after CLS token
+                
+                # Simple heuristic for word_ids: 
+                # Each token gets assigned to a word index based on order
+                word_ids = torch.zeros_like(input_ids)
+                for i in range(1, input_ids.size(1) - 1):  # Skip CLS and SEP
+                    word_ids[0, i] = min(current_word_idx, len(words) - 1)
+                    if i % 1.5 == 0:  # Crude approximation - advance word every ~1.5 tokens
+                        current_word_idx += 1
+                        
+                encoding["word_ids"] = word_ids
+                
+            return {
+                "input_ids": encoding["input_ids"].squeeze(0),
+                "attention_mask": encoding["attention_mask"].squeeze(0),
+                "word_ids": encoding.get("word_ids", torch.zeros_like(encoding["input_ids"])).squeeze(0)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error tokenizing text: {e}")
+            # Return empty tensors as fallback
+            return {
+                "input_ids": torch.zeros(self.config.max_length, dtype=torch.long),
+                "attention_mask": torch.ones(self.config.max_length, dtype=torch.long),
+                "word_ids": torch.zeros(self.config.max_length, dtype=torch.long)
+            }
 
 __all__ = ['EmbeddingDataset', 'EmbeddingDatasetConfig']

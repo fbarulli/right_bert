@@ -1,4 +1,3 @@
-
 # src/common/managers/cuda_manager.py
 from __future__ import annotations
 import os
@@ -40,6 +39,7 @@ class CUDAManager(BaseManager):
         Args:
             config: Optional configuration dictionary that overrides the one from constructor
         """
+        logger.debug(f"CUDAManager._initialize_process_local called for PID {os.getpid()}")
         try:
             super()._initialize_process_local(config)
             logger.info(f"Initializing CUDAManager for process {self._local.pid}")
@@ -83,6 +83,7 @@ class CUDAManager(BaseManager):
             logger.critical(f"Failed to initialize CUDAManager: {e}")
             logger.error(traceback.format_exc())
             raise
+        self._local.initialized = True
 
     def is_available(self) -> bool:
         """
@@ -103,13 +104,16 @@ class CUDAManager(BaseManager):
         self.ensure_initialized()
         return self._local.device
 
-    def setup(self, config: Dict[str, Any]) -> None:
+    def setup(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
-        Setup CUDA environment with configuration.
-
+        Setup CUDA manager with the given configuration.
+        
         Args:
-            config: Configuration dictionary
+            config: Optional configuration dictionary
         """
+        if not hasattr(self._local, 'initialized') or not self._local.initialized:
+            self._initialize_process_local(config)
+        
         self.ensure_initialized()
 
         if not self.is_available():

@@ -1,4 +1,3 @@
-
 # src/common/managers/tokenizer_manager.py
 from __future__ import annotations
 import logging
@@ -56,6 +55,23 @@ class TokenizerManager(BaseManager):
             logger.error(traceback.format_exc())
             raise
 
+    def setup(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Setup TokenizerManager for the current process.
+        
+        Args:
+            config: Configuration dictionary
+        """
+        try:
+            # Ensure process-local initialization
+            if not hasattr(self._local, 'initialized') or not self._local.initialized:
+                self._initialize_process_local(config or self._config)
+            
+            logger.info(f"TokenizerManager setup complete for process {self._local.pid}")
+        except Exception as e:
+            logger.error(f"TokenizerManager setup failed: {str(e)}")
+            logger.error("Stack trace:", exc_info=True)
+            raise
+
     @classmethod
     def set_shared_tokenizer(cls, tokenizer: PreTrainedTokenizerFast) -> None:
         """
@@ -82,9 +98,8 @@ class TokenizerManager(BaseManager):
     def get_worker_tokenizer(
         self,
         worker_id: int,
-        model_name: str,
-        model_type: str = 'embedding',
-        config: Optional[Dict[str, Any]] = None
+        model_name: Optional[str] = None,
+        model_type: str = 'embedding'
     ) -> PreTrainedTokenizerFast:
         """
         Get or create tokenizer for a worker.
@@ -93,66 +108,60 @@ class TokenizerManager(BaseManager):
             worker_id: Worker process ID
             model_name: Name/path of the model
             model_type: Type of model ('embedding' or 'classification')
-            config: Optional configuration dictionary
 
         Returns:
             PreTrainedTokenizerFast: The tokenizer instance
-
-        Raises:
-            ValueError: If model name is invalid
-            RuntimeError: If tokenizer creation fails
         """
-        self.ensure_initialized()
-
+        # Check if we need auto-setup
+        if not self.is_initialized():
+            logger.warning(f"Auto-initializing TokenizerManager in process {os.getpid()}")
+            self.setup(self._config)
+        
         try:
-            logger.debug(f"get_worker_tokenizer called from process {self._local.pid}")
-
             # Check shared tokenizer first
             shared_tokenizer = self.get_shared_tokenizer()
             if shared_tokenizer is not None:
                 logger.info(f"Using shared tokenizer for worker {worker_id}")
                 return shared_tokenizer
 
+            # Handle model_name input
+            if model_name is None:
+                model_name = self._config.get('model', {}).get('name')
+                if not model_name:
+                    raise ValueError("No model name provided and none in config")
+
             # Check cache
             cache_key = f"{worker_id}_{model_name}"
-            if cache_key in self._local.process_tokenizers:
+            if hasattr(self._local, 'process_tokenizers') and cache_key in self._local.process_tokenizers:
                 tokenizer = self._local.process_tokenizers[cache_key]
                 if tokenizer is not None:
                     logger.info(f"Using cached tokenizer for worker {worker_id}")
                     return tokenizer
-                else:
-                    logger.warning(f"Removing invalid tokenizer from cache for worker {worker_id}")
-                    del self._local.process_tokenizers[cache_key]
-                    self._local.tokenizer_refs.pop(cache_key, None)
 
+            # Initialize tokenizers dict if not exists
+            if not hasattr(self._local, 'process_tokenizers'):
+                self._local.process_tokenizers = {}
+                self._local.tokenizer_refs = weakref.WeakValueDictionary()
+            
             # Create new tokenizer
-            logger.info(f"Creating new tokenizer for worker {worker_id} in process {self._local.pid}")
-
-            if not isinstance(model_name, str) or not model_name.strip():
-                raise ValueError("Invalid model name provided")
+            logger.info(f"Creating new tokenizer for worker {worker_id} in process {os.getpid()}")
 
             transformers_logging.set_verbosity_error()
             try:
                 tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
                 if not isinstance(tokenizer, PreTrainedTokenizerFast):
-                    raise RuntimeError(f"Failed to get fast tokenizer for model '{model_name}'")
-
+                    logger.warning(f"Fast tokenizer not available for {model_name}, using slow version")
             except Exception as e:
+                logger.error(f"Error loading tokenizer: {e}")
                 raise RuntimeError(f"Failed to load tokenizer for model '{model_name}': {str(e)}")
             finally:
                 transformers_logging.set_verbosity_warning()
-
-            if tokenizer is None:
-                raise ValueError("Tokenizer creation failed")
 
             # Cache tokenizer
             self._local.process_tokenizers[cache_key] = tokenizer
             self._local.tokenizer_refs[cache_key] = tokenizer
 
-            logger.info(
-                f"Successfully created tokenizer for worker {worker_id} "
-                f"in process {self._local.pid}"
-            )
+            logger.info(f"Successfully created tokenizer for worker {worker_id} in process {os.getpid()}")
             return tokenizer
 
         except Exception as e:

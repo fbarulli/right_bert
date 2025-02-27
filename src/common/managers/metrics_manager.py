@@ -1,9 +1,11 @@
-
 # src/common/managers/metrics_manager.py
 from __future__ import annotations
 import logging
 import torch
 import torch.nn as nn
+import os
+import threading  # Add the missing import
+import traceback  # Add for better error reporting
 from typing import Dict, Any, Optional, List
 import math
 import json
@@ -109,33 +111,68 @@ class MetricsLogger:
 
 
 class MetricsManager(BaseManager):
-    """
-    Manages metric computation.
-
-    This manager handles:
-    - Loss computation
-    - Accuracy metrics
-    - Device placement for metrics
-    """
-
+    """Manager for tracking and computing metrics."""
+    
     def __init__(
-        self,
+        self, 
         cuda_manager: CUDAManager,
         config: Optional[Dict[str, Any]] = None
     ):
-        """
-        Initialize MetricsManager.
-
+        """Initialize metrics manager.
+        
         Args:
-            cuda_manager: Injected CUDAManager instance
+            cuda_manager: CUDA manager instance
             config: Optional configuration dictionary
         """
-        super().__init__(config)
         self._cuda_manager = cuda_manager
-        self._local.device = None
-        self._local.loss_fct = None
-        self._tensor_manager = get_tensor_manager()
-
+        
+        # Initialize thread-local storage immediately to avoid cleanup errors
+        self._local = threading.local()
+        self._local.pid = os.getpid()
+        self._local.initialized = False
+        self._local.metrics = {}
+        
+        # Now call super to complete initialization
+        super().__init__(config)
+    
+    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize process-local state."""
+        try:
+            super()._initialize_process_local(config)
+            
+            # Ensure basic attributes exist
+            if not hasattr(self._local, 'metrics'):
+                self._local.metrics = {}
+            
+            self._local.device = self._cuda_manager.get_device()
+            logger.info(f"Metrics manager initialized for process {self._local.pid}")
+            
+        except Exception as e:
+            logger.error(f"Error initializing MetricsManager: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+    
+    def cleanup(self) -> None:
+        """Clean up metrics manager resources."""
+        try:
+            # First check if _local exists before trying to access/clean it
+            if hasattr(self, '_local'):
+                # Get PID for logging
+                pid = getattr(self._local, 'pid', os.getpid())
+                
+                # Reset metrics
+                if hasattr(self._local, 'metrics'):
+                    self._local.metrics = {}
+                
+                logger.info(f"Cleaned up MetricsManager for process {pid}")
+            
+            # Always call parent cleanup
+            super().cleanup()
+            
+        except Exception as e:
+            logger.error(f"Error cleaning up MetricsManager: {str(e)}")
+            logger.error(traceback.format_exc())
+    
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
         Initialize process-local attributes.

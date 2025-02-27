@@ -1,72 +1,69 @@
 """
-Embedding module for learning token embeddings through masked language modeling.
-
-This module provides:
-- Dataset handling for embedding tasks
-- Masking strategies
-- Loss functions
-- Model definitions
-- Training utilities
+Embedding module for training and using text embeddings.
 """
+import os
+import sys
+import logging
 
-from src.embedding.model import (
-    EmbeddingBert,
-    EmbeddingModelConfig,
-    embedding_model_factory,
-)
+# Ensure the parent directory is in the path
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
 
-from src.embedding.losses import (
-    InfoNCELoss,
-    InfoNCEConfig,
-    info_nce_loss_factory,
-)
+logger = logging.getLogger(__name__)
+logger.debug(f"Initializing embedding package in process {os.getpid()}")
 
-from src.embedding.masking import (
-    MaskingModule,
-    MaskingConfig,
-    WholeWordMaskingModule,
-    SpanMaskingModule,
-    create_attention_mask,
-)
-
-from src.embedding.dataset import (
-    EmbeddingDataset,
-    EmbeddingDatasetConfig,
-)
-
-from src.embedding.embedding_trainer import (
-    EmbeddingTrainer,
-    EmbeddingTrainerConfig,
-)
-
-from src.embedding.embedding_training import (
-    train_embeddings,
-)
-
-__all__ = [
-    # Models
-    'EmbeddingBert',
-    'EmbeddingModelConfig',
-    'embedding_model_factory',
+# Import required modules
+# Make sure modules are imported in dependency order
+try:
+    # First import utilities
+    from src.embedding.utils import (
+        LogConfig,
+        MemoryTracker,
+        TensorPool,
+        CachingDict
+    )
     
-    # Losses
-    'InfoNCELoss',
-    'InfoNCEConfig',
-    'info_nce_loss_factory',
+    # Then import other modules that depend on utils
+    from src.embedding.masking import SpanMaskingModule, MaskingConfig
+    from src.embedding.csv_dataset import CSVDataset
     
-    # Masking
-    'MaskingModule',
-    'MaskingConfig',
-    'WholeWordMaskingModule',
-    'SpanMaskingModule',
-    'create_attention_mask',
+    # Finally import high-level modules
+    from src.embedding.dataset import EmbeddingDataset, EmbeddingDatasetConfig
     
-    # Dataset
-    'EmbeddingDataset',
-    'EmbeddingDatasetConfig',
+    __all__ = [
+        'LogConfig',
+        'MemoryTracker',
+        'TensorPool',
+        'CachingDict',
+        'SpanMaskingModule',
+        'MaskingConfig',
+        'CSVDataset',
+        'EmbeddingDataset',
+        'EmbeddingDatasetConfig',
+        
+        # Models
+        'EmbeddingBert',
+        'EmbeddingModelConfig',
+        'embedding_model_factory',
+        
+        # Losses
+        'InfoNCELoss',
+        'InfoNCEConfig',
+        'info_nce_loss_factory',
+        
+        # Masking
+        'MaskingModule',
+        'WholeWordMaskingModule',
+        'create_attention_mask',
+        
+        # Training
+        'EmbeddingTrainer',
+        'EmbeddingTrainerConfig',
+        'train_embeddings',
+    ]
     
-    # Training
-    'EmbeddingTrainer',
-    'EmbeddingTrainerConfig',
-    'train_embeddings',
-]
+except ImportError as e:
+    logger.error(f"Error importing embedding modules: {str(e)}")
+    logger.debug(f"Current sys.path: {sys.path}")
+    raise

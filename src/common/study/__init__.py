@@ -1,4 +1,6 @@
+"""Study module for hyperparameter optimization and experiment tracking."""
 
-# src/training/__init__.py
-# src/training/__init__.py
-# (Empty - makes 'training' a package)
+from src.common.study.data_types import TrialData
+from src.common.study.study_storage import StudyStorage
+
+__all__ = ['TrialData', 'StudyStorage']

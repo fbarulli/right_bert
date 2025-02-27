@@ -14,85 +14,84 @@ from src.embedding.imports import (
     WandbManager,
     optuna,
 )
+# Add direct import for nn
+from torch import nn
+
+# Update to import the missing EmbeddingTrainer class
+import logging
+from typing import Dict, Any, Optional
+
+# Import the EmbeddingTrainer class
+from src.embedding.trainers import EmbeddingTrainer
+
+logger = logging.getLogger(__name__)
 
 @log_function()
 def train_embeddings(
-    model: PreTrainedModel,
+    model: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
     config: Dict[str, Any],
-    metrics_dir: Optional[str] = None,
+    metrics_dir: str,
     is_trial: bool = False,
-    trial: Optional['optuna.Trial'] = None,
-    wandb_manager: Optional[WandbManager] = None,
-    job_id: Optional[int] = None,
+    trial: Optional[optuna.Trial] = None,
+    wandb_manager: Optional[Any] = None,
+    job_id: int = 0,
     train_dataset: Optional[Dataset] = None,
     val_dataset: Optional[Dataset] = None
-) -> None:
-    """
-    Train embedding model with masked language modeling.
+) -> Dict[str, Any]:
+    """Train embedding model."""
+    logger.info("Entering train_embeddings")
     
-    Args:
-        model: The pre-trained model to train
-        train_loader: Training data loader
-        val_loader: Validation data loader
-        config: Training configuration
-        metrics_dir: Optional directory for saving metrics
-        is_trial: Whether this is an Optuna trial
-        trial: Optional Optuna trial object
-        wandb_manager: Optional WandB manager for logging
-        job_id: Optional job ID for distributed training
-        train_dataset: Training dataset (for cleanup)
-        val_dataset: Validation dataset (for cleanup)
-    """
+    # Import the fix_dataloader_config function
+    from src.common.fix_dataloader import fix_dataloader_config
+    
+    # Fix config to avoid multiprocessing issues
+    config = fix_dataloader_config(config)
+    
+    # Get all required managers from the factory
+    from src.common.managers import (
+        get_cuda_manager,
+        get_batch_manager,
+        get_amp_manager,
+        get_tokenizer_manager,
+        get_metrics_manager,
+        get_storage_manager
+    )
+    
     try:
-        from src.embedding.embedding_trainer import EmbeddingTrainer
-
-        # Create trainer instance with trial info
+        # Get instances of all required managers
+        cuda_manager = get_cuda_manager()
+        batch_manager = get_batch_manager()
+        amp_manager = get_amp_manager()
+        tokenizer_manager = get_tokenizer_manager()
+        metrics_manager = get_metrics_manager()
+        storage_manager = get_storage_manager()
+        
+        # Create trainer with all required dependencies
         trainer = EmbeddingTrainer(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
             config=config,
             metrics_dir=metrics_dir,
+            # Pass all managers (now safe since we disabled multiprocessing)
+            batch_manager=batch_manager,
+            amp_manager=amp_manager,
+            metrics_manager=metrics_manager,
+            cuda_manager=cuda_manager,
+            tokenizer_manager=tokenizer_manager,
+            storage_manager=storage_manager,
             is_trial=is_trial,
             trial=trial,
             wandb_manager=wandb_manager,
-            job_id=job_id,
-            train_dataset=train_dataset,
-            val_dataset=val_dataset
+            job_id=job_id
         )
-
-        num_epochs = config['training']['num_epochs']
         
-        try:
-            trainer.train(num_epochs)
-            
-            # Handle trial completion metrics
-            if trial and metrics_dir:
-                metrics_path = Path(metrics_dir)
-                metrics_path.mkdir(parents=True, exist_ok=True)
-                
-                try:
-                    from src.common.study.trial_analyzer import TrialAnalyzer
-                    analyzer = TrialAnalyzer(metrics_path)
-                    analyzer.plot_trial_curves([trial], "Embedding Training")
-                except Exception as e:
-                    logger.warning(f"Failed to plot trial metrics: {str(e)}")
-                    
-        except optuna.exceptions.TrialPruned:
-            # Trial was pruned - cleanup will be handled by trainer
-            raise
-            
-        except Exception as e:
-            logger.error(f"Error in embedding training: {str(e)}")
-            raise
-            
-        finally:
-            # Let the trainer handle its own cleanup
-            # It will know whether this is a trial and clean up accordingly
-            pass
-
+        # Train the model
+        results = trainer.train()
+        return results
+        
     except Exception as e:
         logger.error(f"Fatal error in embedding training: {str(e)}")
         raise

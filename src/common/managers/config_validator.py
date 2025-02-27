@@ -169,24 +169,28 @@ class ConfigValidator:
         nested_path: str,
         required_fields: Set[str]
     ) -> None:
-        """Validate nested section fields exist."""
+        """
+        Validate nested section of the configuration.
+
+        Args:
+            config: Configuration dictionary
+            nested_path: Dot-separated path to the nested section
+            required_fields: Set of required fields for the nested section
+
+        Raises:
+            ValueError: If required fields are missing
+        """
         try:
-            # Navigate to nested section
             current = config
             for part in nested_path.split('.'):
-                current = current.get(part, {})
-
-            # Check required fields
+                current = current[part]
+            if not isinstance(current, dict):
+                raise ValueError(f"Expected a dictionary at {nested_path}, but got {type(current).__name__}")
             missing_fields = required_fields - set(current.keys())
             if missing_fields:
-                raise ValueError(
-                    f"Missing required fields in {nested_path}: {missing_fields}"
-                )
-
-        except Exception as e:
-            raise ValueError(
-                f"Error validating nested section {nested_path}: {str(e)}"
-            )
+                raise ValueError(f"Missing required fields in {nested_path} section: {missing_fields}")
+        except KeyError as e:
+            raise ValueError(f"Missing section {nested_path}: {str(e)}")
 
     def _validate_field_types(self, config: Dict[str, Any]) -> None:
         """Validate field types are correct."""
@@ -198,6 +202,8 @@ class ConfigValidator:
             raise TypeError("learning_rate must be a number")
         if not isinstance(training['fp16'], bool):
             raise TypeError("fp16 must be a boolean")
+        if not isinstance(training['cuda_graph'], dict):
+            raise TypeError("cuda_graph must be a dictionary")
 
         # Resource section types
         resources = config['resources']

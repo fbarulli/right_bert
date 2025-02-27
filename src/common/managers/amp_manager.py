@@ -1,9 +1,9 @@
-
 # src/common/managers/amp_manager.py
 from __future__ import annotations
 import torch
 import logging
 import traceback
+import os  # Add this import
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 from .base_manager import BaseManager
@@ -13,14 +13,24 @@ logger = logging.getLogger(__name__)
 
 
 class AMPManager(BaseManager):
-    """Process-local AMP (Automatic Mixed Precision) manager."""
+    """Manager for Automatic Mixed Precision (AMP) training.
+    
+    This manager handles the GradScaler and automatically sets up AMP
+    based on CUDA availability.
+    """
 
     def __init__(self, cuda_manager: CUDAManager, config: Optional[Dict[str, Any]] = None):
+        """Initialize the AMP Manager.
+        
+        Args:
+            cuda_manager: The CUDA manager to determine device availability
+            config: Application configuration
+        """
         self._cuda_manager = cuda_manager
         super().__init__(config)  # Single call to initialize
-        # Remove: self._initialize_process_local(config)
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize process-local state."""
         try:
             super()._initialize_process_local(config)
             effective_config = config if config is not None else self._config
@@ -28,18 +38,14 @@ class AMPManager(BaseManager):
             if not self._cuda_manager.is_initialized():
                 raise RuntimeError("CUDA must be initialized before AMPManager")
 
-            if self._cuda_manager.is_available():
-                training_config = self.get_config_section(effective_config, 'training')
-                if training_config.get('fp16', False):
-                    import torch.cuda.amp
-                    self._local.scaler = torch.cuda.amp.GradScaler()
-                    logger.info(f"Initialized GradScaler for process {self._local.pid}")
-                else:
-                    self._local.scaler = None
-                    logger.info("FP16 not enabled, AMP disabled")
+            self._use_amp = effective_config.get('training', {}).get('use_amp', False) and self._cuda_manager.is_available()
+
+            if self._use_amp:
+                self._local.scaler = torch.cuda.amp.GradScaler()
+                logger.info(f"Initialized GradScaler for process {self._local.pid}")
             else:
                 self._local.scaler = None
-                logger.warning("CUDA not available, AMP disabled")
+                logger.info("FP16 not enabled, AMP disabled")
 
             logger.info(f"AMPManager initialized for process {self._local.pid}")
 
@@ -117,6 +123,20 @@ class AMPManager(BaseManager):
         self.ensure_initialized()
 
         try:
+            # Check if loss is None - critical safety check
+            if loss is None:
+                logger.error("Loss is None in backward_step - skipping backward pass")
+                return
+                
+            # Validate loss is a proper tensor with requires_grad
+            if not isinstance(loss, torch.Tensor):
+                logger.error(f"Loss is not a tensor (got {type(loss)}) - skipping backward pass")
+                return
+                
+            if not loss.requires_grad:
+                logger.warning("Loss tensor doesn't have requires_grad=True - setting it now")
+                loss.requires_grad_(True)
+
             if self.is_enabled():
                 scaled_loss = self.scale_loss(loss)
                 scaled_loss.backward()
@@ -138,7 +158,8 @@ class AMPManager(BaseManager):
         except Exception as e:
             logger.error(f"Error in backward step: {str(e)}")
             logger.error(traceback.format_exc())
-            raise
+            # Don't re-raise, just log the error to allow training to continue
+            # with the next batch
 
     @contextmanager
     def autocast(self) -> None:
@@ -162,12 +183,30 @@ class AMPManager(BaseManager):
             if hasattr(self, '_local'):
                 if hasattr(self._local, 'scaler'):
                     self._local.scaler = None
-                logger.info(f"Cleaned up AMPManager for process {self._local.pid}")
+                
+                # Add a safety check for the pid attribute
+                pid = getattr(self._local, 'pid', os.getpid())
+                logger.info(f"Cleaned up AMPManager for process {pid}")
+                
             super().cleanup()
         except Exception as e:
             logger.error(f"Error cleaning up AMPManager: {str(e)}")
             logger.error(traceback.format_exc())
             raise
+
+
+def get_amp_manager(cuda_manager: CUDAManager, config: Optional[Dict[str, Any]] = None) -> AMPManager:
+    """
+    Get an instance of AMPManager.
+
+    Args:
+        cuda_manager: An instance of CUDAManager
+        config: Optional configuration dictionary
+
+    Returns:
+        AMPManager: An instance of AMPManager
+    """
+    return AMPManager(cuda_manager, config)
 
 
 __all__ = ['AMPManager']

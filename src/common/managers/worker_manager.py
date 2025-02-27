@@ -34,41 +34,25 @@ class WorkerManager(BaseManager):
     - Process cleanup and scaling
     """
 
-    def __init__(
-        self,
-        cuda_manager: CUDAManager,
-        model_manager: ModelManager,
-        tokenizer_manager: TokenizerManager,
-        config: Dict[str, Any],
-        study_name: str,
-        storage_url: str,
-        n_jobs: int = 2,
-        max_workers: int = 32,
-        health_check_interval: int = 60
-    ):
+    def __init__(self, study_name: str, storage_url: str, config: Dict[str, Any]):
         """
         Initialize WorkerManager.
 
         Args:
-            cuda_manager: Injected CUDAManager instance
-            model_manager: Injected ModelManager instance
-            tokenizer_manager: Injected TokenizerManager instance
-            config: Configuration dictionary
             study_name: Name of the study
             storage_url: URL for Optuna storage
-            n_jobs: Number of worker processes to start
-            max_workers: Maximum number of workers allowed
-            health_check_interval: Interval for health checks in seconds
+            config: Configuration dictionary
         """
         super().__init__(config)
-        self._cuda_manager = cuda_manager
-        self._model_manager = model_manager
-        self._tokenizer_manager = tokenizer_manager
-        self._study_name = study_name
-        self._storage_url = storage_url
-        self._n_jobs = min(n_jobs, max_workers)
-        self._max_workers = max_workers
-        self._health_check_interval = health_check_interval
+        self.study_name = study_name
+        self.storage_url = storage_url
+        self._local = threading.local()
+        self._cuda_manager = CUDAManager()
+        self._model_manager = ModelManager()
+        self._tokenizer_manager = TokenizerManager()
+        self._n_jobs = min(config['n_jobs'], config['max_workers'])
+        self._max_workers = config['max_workers']
+        self._health_check_interval = config['health_check_interval']
         self._last_health_check = time.time()
         self._health_check_thread = None
 
@@ -552,6 +536,14 @@ class WorkerManager(BaseManager):
             self.cleanup_workers()
             logger.info(f"Cleaned up WorkerManager for process {self._local.pid}")
             super().cleanup()
+            if hasattr(self, '_local'):
+                if hasattr(self._local, 'worker_queue'):
+                    self._local.worker_queue.close()
+                if hasattr(self._local, 'result_queue'):
+                    self._local.result_queue.close()
+                self._local.active_workers.clear()
+                self._local.worker_groups.clear()
+                logger.info("WorkerManager local resources cleaned up")
         except Exception as e:
             logger.error(f"Error cleaning up WorkerManager: {str(e)}")
             logger.error(traceback.format_exc())

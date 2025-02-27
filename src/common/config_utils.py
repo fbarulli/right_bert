@@ -1,4 +1,3 @@
-
 # config_utils.py
 # src/common/config_utils.py
 from __future__ import annotations
@@ -136,6 +135,7 @@ def load_yaml_config(filepath: str) -> Dict[str, Any]:
                 logging.warning(f"YAML file at {filepath} is empty.")
                 return {}
             config =  _convert_config_types(config, PARAMETER_TYPES)
+            logger.debug(f"Loaded YAML configuration: {config}")
             return config
     except FileNotFoundError:
         logging.error(f"YAML file not found: {filepath}")

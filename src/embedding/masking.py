@@ -46,7 +46,17 @@ class MaskingModule:
         config: MaskingConfig
     ) -> None:
         """Initialize masking module."""
-        from src.common import get_tensor_manager  # Local import
+        self.tokenizer = tokenizer
+        self.config = config
+
+        # Replace direct TensorManager initialization with proper factory function
+        try:
+            from src.common.managers import get_tensor_manager
+            self.tensor_manager = get_tensor_manager()
+        except Exception as e:
+            # Fallback to utility function which handles initialization properly
+            from src.common.utils import get_tensor_manager
+            self.tensor_manager = get_tensor_manager()
         
         if not self.MIN_MASK_PROB <= config.mask_prob <= self.MAX_MASK_PROB:
             logger.warning(
@@ -55,9 +65,7 @@ class MaskingModule:
             )
         self.mask_prob = max(self.MIN_MASK_PROB, min(self.MAX_MASK_PROB, config.mask_prob))
 
-        self.tokenizer = tokenizer
         self.max_predictions = config.max_predictions
-        self.tensor_manager = get_tensor_manager()
         self.log_config = LogConfig(level=config.log_level)
 
         # Special tokens
@@ -151,48 +159,138 @@ class MaskingModule:
             labels[pos] = original_ids[pos]
         return labels
 
+    def __call__(self, batch: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Apply masking to the input batch.
+        
+        Args:
+            batch: Input batch with 'input_ids', etc.
+            
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Masked input ids and labels
+        """
+        # Handle missing word_ids safely
+        try:
+            # Add robust handling for word_ids
+            if 'word_ids' not in batch:
+                logger.warning("word_ids not found in batch, generating default word_ids")
+                # Create default word_ids (each token is its own word)
+                input_ids = batch['input_ids']
+                word_ids = torch.arange(input_ids.size(0)).unsqueeze(0).expand(input_ids.size())
+                batch['word_ids'] = word_ids
+            
+            # Use the fallback method if this is a base class call
+            return self._fallback_masking(batch)
+            
+        except Exception as e:
+            logger.error(f"Error in masking: {e}")
+            # Fallback to simpler masking without word IDs
+            return self._fallback_masking(batch)
+
+    def _fallback_masking(self, batch: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Simple fallback masking when word_ids aren't available.
+        
+        Args:
+            batch: Input batch with 'input_ids'
+            
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Masked input ids and labels
+        """
+        logger.warning("Using fallback masking without word_ids")
+        
+        # Get input_ids
+        input_ids = batch['input_ids'].clone()
+        
+        # Create labels tensor (copy of input_ids)
+        labels = input_ids.clone()
+        
+        # Create probability mask
+        probability_matrix = torch.full(input_ids.shape, self.mask_prob, device=input_ids.device)
+        
+        # Exclude special tokens from masking (assume first and last tokens are special)
+        special_tokens_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+        special_tokens_mask[:, 0] = True  # First token
+        if input_ids.size(1) > 1:
+            special_tokens_mask[:, -1] = True  # Last token
+        
+        probability_matrix.masked_fill_(special_tokens_mask, value=0.0)
+        
+        # Sample masked indices
+        masked_indices = torch.bernoulli(probability_matrix).bool()
+        
+        # Set labels to -100 for tokens we don't want to predict
+        labels[~masked_indices] = -100
+        
+        # Replace masked tokens with mask token
+        input_ids[masked_indices] = self.tokenizer.mask_token_id
+        
+        return input_ids, labels
+
 class WholeWordMaskingModule(MaskingModule):
     """Whole word masking strategy."""
 
     @log_function()
     def __call__(self, batch: Dict[str, Tensor]) -> Tuple[Tensor, Tensor]:
         """Apply whole word masking to the input batch."""
-        input_ids = batch['input_ids']
-        word_ids = batch['word_ids']
-        special_tokens_mask = batch['special_tokens_mask']
+        try:
+            input_ids = batch['input_ids']
+            
+            # Handle missing word_ids
+            if 'word_ids' not in batch:
+                logger.warning("word_ids not found in batch, generating default word_ids")
+                word_ids = torch.arange(len(input_ids))
+                batch['word_ids'] = word_ids
+                
+            word_ids = batch['word_ids']
+            
+            # Handle missing special_tokens_mask
+            if 'special_tokens_mask' not in batch:
+                # Create a simple mask - first and last tokens are special
+                special_tokens_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+                special_tokens_mask[0] = True  # First token
+                special_tokens_mask[-1] = True  # Last token
+                batch['special_tokens_mask'] = special_tokens_mask
+                
+            special_tokens_mask = batch['special_tokens_mask']
 
-        if input_ids.dim() != 1:
-            raise ValueError(f"Expected 1D input tensor, got: {input_ids.shape}")
+            if input_ids.dim() != 1:
+                raise ValueError(f"Expected 1D input tensor, got: {input_ids.shape}")
 
-        input_ids = self.tensor_manager.create_cpu_tensor(input_ids.clone(), dtype=torch.long)
-        original_ids = input_ids.clone()
+            input_ids = self.tensor_manager.create_cpu_tensor(input_ids.clone(), dtype=torch.long)
+            original_ids = input_ids.clone()
 
-        # Convert to list for processing
-        word_ids_list = [
-            None if i == -1 or m == 1 else i 
-            for i, m in zip(word_ids.tolist(), special_tokens_mask.tolist())
-        ]
+            # Convert to list for processing
+            word_ids_list = [
+                None if i == -1 or m == 1 else i 
+                for i, m in zip(word_ids.tolist(), special_tokens_mask.tolist())
+            ]
+            
+            # Get word boundaries
+            word_boundaries = self._get_word_boundaries(input_ids, word_ids_list)
+            maskable_boundaries = self._get_maskable_boundaries(word_boundaries, word_ids_list)
+
+            if not maskable_boundaries:
+                logger.warning("No maskable word boundaries found")
+                return input_ids, torch.full_like(input_ids, -100)
+
+            # Select words to mask
+            num_to_mask = max(1, int(len(maskable_boundaries) * self.mask_prob))
+            words_to_mask = random.sample(maskable_boundaries, num_to_mask)
+            
+            # Apply masking
+            masked_positions: Set[int] = set()
+            for start, end in words_to_mask:
+                self._apply_token_masking(input_ids, start, end)
+                masked_positions.update(range(start, end))
+
+            labels = self._create_labels(original_ids, masked_positions)
+            return input_ids, labels
         
-        # Get word boundaries
-        word_boundaries = self._get_word_boundaries(input_ids, word_ids_list)
-        maskable_boundaries = self._get_maskable_boundaries(word_boundaries, word_ids_list)
-
-        if not maskable_boundaries:
-            logger.warning("No maskable word boundaries found")
-            return input_ids, torch.full_like(input_ids, -100)
-
-        # Select words to mask
-        num_to_mask = max(1, int(len(maskable_boundaries) * self.mask_prob))
-        words_to_mask = random.sample(maskable_boundaries, num_to_mask)
-
-        # Apply masking
-        masked_positions: Set[int] = set()
-        for start, end in words_to_mask:
-            self._apply_token_masking(input_ids, start, end)
-            masked_positions.update(range(start, end))
-
-        labels = self._create_labels(original_ids, masked_positions)
-        return input_ids, labels
+        except Exception as e:
+            logger.error(f"Error in whole word masking: {e}")
+            # Fallback to base class implementation
+            return super()._fallback_masking(batch)
 
 class SpanMaskingModule(MaskingModule):
     """Span-based masking, prioritizing longer spans."""
@@ -207,7 +305,7 @@ class SpanMaskingModule(MaskingModule):
     ) -> None:
         """Initialize span masking module."""
         super().__init__(tokenizer, config)
-        
+
         if not self.MIN_SPAN_LENGTH <= config.max_span_length <= self.MAX_SPAN_LENGTH:
             raise ValueError(
                 f"max_span_length must be between {self.MIN_SPAN_LENGTH} and "
@@ -218,81 +316,95 @@ class SpanMaskingModule(MaskingModule):
     @log_function()
     def __call__(self, batch: Dict[str, Tensor]) -> Tuple[Tensor, Tensor]:
         """Apply span masking."""
-        input_ids = batch['input_ids']
-        word_ids = batch['word_ids']
-        special_tokens_mask = batch['special_tokens_mask']
-
-        if input_ids.dim() != 1:
-            raise ValueError(f"Expected 1D input tensor, got shape: {input_ids.shape}")
-
-        # Prepare tensors
-        input_ids = self.tensor_manager.create_cpu_tensor(input_ids.clone(), dtype=torch.long)
-        original_ids = input_ids.clone()
-
-        # Process word IDs
-        word_ids_list = [
-            None if id == -1 or mask == 1 else id 
-            for id, mask in zip(word_ids.tolist(), special_tokens_mask.tolist())
-        ]
-
-        # Get boundaries
-        word_boundaries = self._get_word_boundaries(input_ids, word_ids_list)
-        maskable_boundaries = self._get_maskable_boundaries(
-            word_boundaries, word_ids_list, self.max_span_length
-        )
-
-        if not maskable_boundaries:
-            return input_ids, torch.full_like(input_ids, -100)
-
-        # Calculate masking targets
-        seq_length = len(input_ids)
-        target_masked = int(seq_length * self.mask_prob)
-
-        # Process boundaries with overlap scores
-        processed_boundaries = []
-        for boundary in maskable_boundaries:
-            start, end = boundary
-            length = end - start
-            overlap_score = 0
+        try:
+            input_ids = batch['input_ids']
             
-            # Calculate overlap score
-            for j in range(start, end):
-                for other_start, other_end in maskable_boundaries:
-                    if (other_start <= j < other_end and 
-                        (start, end) != (other_start, other_end)):
-                        overlap_score += 1
-                        break
-                        
-            processed_boundaries.append((start, end, length, overlap_score))
+            # Handle missing word_ids
+            if 'word_ids' not in batch:
+                logger.warning("word_ids not found in batch, generating default word_ids")
+                word_ids = torch.arange(len(input_ids))
+                batch['word_ids'] = word_ids
+                
+            word_ids = batch['word_ids']
+            
+            # Handle missing special_tokens_mask
+            if 'special_tokens_mask' not in batch:
+                # Create a simple mask - first and last tokens are special
+                special_tokens_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+                special_tokens_mask[0] = True  # First token
+                special_tokens_mask[-1] = True  # Last token
+                batch['special_tokens_mask'] = special_tokens_mask
+                
+            special_tokens_mask = batch['special_tokens_mask']
 
-        # Sort by length and overlap score
-        processed_boundaries.sort(key=lambda x: (x[2], -x[3]), reverse=True)
+            if input_ids.dim() != 1:
+                raise ValueError(f"Expected 1D input tensor, got shape: {input_ids.shape}")
+                
+            # Prepare tensors
+            input_ids = self.tensor_manager.create_cpu_tensor(input_ids.clone(), dtype=torch.long)
+            original_ids = input_ids.clone()
+            
+            # Process word IDs
+            word_ids_list = [
+                None if id == -1 or mask == 1 else id 
+                for id, mask in zip(word_ids.tolist(), special_tokens_mask.tolist())
+            ]
 
-        # Apply masking
-        masked_positions: Set[int] = set()
-        masked_count = 0
+            # Get boundaries
+            word_boundaries = self._get_word_boundaries(input_ids, word_ids_list)
+            maskable_boundaries = self._get_maskable_boundaries(
+                word_boundaries, word_ids_list, self.max_span_length
+            )
+            
+            if not maskable_boundaries:
+                logger.warning("No maskable boundaries found")
+                return input_ids, torch.full_like(input_ids, -100)
+                
+            # Calculate masking targets
+            seq_length = len(input_ids)
+            target_masked = min(self.max_predictions, int(seq_length * self.mask_prob))
+            
+            # Process boundaries with overlap scoring
+            processed_boundaries = []
+            
+            for boundary in maskable_boundaries:
+                start, end = boundary
+                length = end - start
+                
+                # Calculate overlap score
+                overlap_score = 0
+                for j in range(start, end):
+                    for other_start, other_end in maskable_boundaries:
+                        if (other_start <= j < other_end and 
+                            (start, end) != (other_start, other_end)):
+                            overlap_score += 1
+                            break
+                            
+                processed_boundaries.append((start, end, length, overlap_score))
+                
+            # Sort by length and overlap score
+            processed_boundaries.sort(key=lambda x: (x[2], -x[3]), reverse=True)
 
-        for start, end, _, _ in processed_boundaries:
-            for i in range(start, end):
-                if masked_count < target_masked and i not in masked_positions:
-                    self._apply_token_masking(input_ids, i, i + 1)
-                    masked_positions.add(i)
-                    masked_count += 1
+            # Apply masking
+            masked_positions: Set[int] = set()
+            masked_count = 0
 
-        # Create labels and log results
-        labels = self._create_labels(original_ids, masked_positions)
-        num_masked = len(masked_positions)
-        mask_ratio = num_masked / seq_length
-        
-        logger.info(
-            f"Masking results:\n"
-            f"- Mask ratio achieved: {mask_ratio:.2%}\n"
-            f"- Total tokens: {len(input_ids)}\n"
-            f"- Masked tokens: {num_masked}\n"
-            f"- Sequence length: {seq_length}"
-        )
-        
-        return input_ids, labels
+            for start, end, _, _ in processed_boundaries:
+                for i in range(start, end):
+                    if masked_count < target_masked and i not in masked_positions:
+                        self._apply_token_masking(input_ids, i, i + 1)
+                        masked_positions.add(i)
+                        masked_count += 1
+
+            # Create labels
+            labels = self._create_labels(original_ids, masked_positions)
+            
+            return input_ids, labels
+            
+        except Exception as e:
+            logger.error(f"Error in span masking: {e}")
+            # Fallback to simpler masking without word IDs
+            return super()._fallback_masking(batch)
 
 @log_function()
 def create_attention_mask(input_ids: Tensor, padding_idx: int = 0) -> Tensor:

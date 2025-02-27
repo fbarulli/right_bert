@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 import logging
 import traceback
+import os  # Add missing import
 from typing import Optional, Union, List, Tuple, Dict, Any
 import numpy as np
 import threading
@@ -24,9 +25,16 @@ class TensorManager(BaseManager):
     """
 
     def __init__(self, config, cuda_manager):
+        """Initialize TensorManager with config and CUDA manager."""
         self._cuda_manager = cuda_manager
         self._local = threading.local()
         super().__init__(config)
+    
+    def _setup_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Setup process-local tensor attributes."""
+        self._local.device = None
+        self._local.tensors = {}
+        self._local.initialized = False
     
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -38,9 +46,7 @@ class TensorManager(BaseManager):
         try:
             super()._initialize_process_local(config)
 
-            if not self._cuda_manager.is_initialized():
-                raise RuntimeError("CUDAManager must be initialized before TensorManager")
-
+            self._validate_dependency(self._cuda_manager, "CUDAManager")
             self._local.device = self._cuda_manager.get_device()
             self._local.initialized = True
 
@@ -195,28 +201,42 @@ class TensorManager(BaseManager):
             raise
 
     def clear_memory(self) -> None:
-        """Clear CUDA memory."""
-        self.ensure_initialized()
+        """Clear all cached tensors and free memory."""
         try:
-            self._cuda_manager.cleanup()
-            logger.debug("Cleared CUDA memory")
-
+            # Only try to clear if we're initialized
+            if hasattr(self, '_local') and self.is_initialized():
+                # Clear tensor caches
+                for tensor_pool in self._local.tensor_pools.values():
+                    tensor_pool.clear()
+                
+                # Clear other memory
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
+                logger.info(f"Cleared tensor memory in process {os.getpid()}")
         except Exception as e:
-            logger.error(f"Error clearing memory: {str(e)}")
-            logger.error(traceback.format_exc())
-            raise
+            logger.warning(f"Error clearing tensor memory: {str(e)}")
 
     def cleanup(self) -> None:
         """Clean up tensor manager resources."""
         try:
-            self.clear_memory()
-            self._local.device = None
-            logger.info(f"Cleaned up TensorManager for process {self._local.pid}")
+            # Only attempt clear_memory if _local exists
+            if hasattr(self, '_local'):
+                self.clear_memory()
+                
+            # Get process ID safely
+            pid = os.getpid()
+            if hasattr(self, '_local') and hasattr(self._local, 'pid'):
+                pid = self._local.pid
+                
+            logger.info(f"Cleaned up TensorManager for process {pid}")
+            
+            # Call parent cleanup last
             super().cleanup()
         except Exception as e:
             logger.error(f"Error cleaning up TensorManager: {str(e)}")
             logger.error(traceback.format_exc())
-            raise
+            # Don't re-raise the exception to avoid blocking other cleanup activities
 
 
 __all__ = ['TensorManager']

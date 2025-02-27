@@ -1,4 +1,3 @@
-
 # src/common/managers/wandb_manager.py
 from __future__ import annotations
 import logging
@@ -42,29 +41,43 @@ class WandbManager(BaseManager):
     def __init__(
         self,
         config: Dict[str, Any],
-        study_name: str
+        study_name: Optional[str] = "default_study"
     ):
-        """
-        Initialize WandbManager.
-
-        Args:
-            config: Configuration dictionary
-            study_name: Name of the study for grouping runs
-        """
+        """Initialize the WandbManager."""
+        # Create _local immediately with all required attributes
+        self._local = threading.local()
+        
+        # Set all required attributes with defaults
+        self._set_default_attributes()
+        
+        # Now call super to initialize other parts
         super().__init__(config)
-        self._study_name = study_name
-        self._local.start_time = None
-        self._local.run = None
+        self._study_name = study_name or "default_study"
+
+    def _set_default_attributes(self):
+        """Set all required attributes with default values."""
         self._local.enabled = False
+        self._local.pid = os.getpid()
+        self._local.run = None
+        self._local.start_time = None
+        self._local.initialized = False
+        self._local.project = "default_project"
+        self._local.entity = None
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize process-local attributes.
-
-        Args:
-            config: Optional configuration dictionary that overrides the one from constructor
-        """
+        """Initialize process-local attributes."""
         try:
+            # Check if we need to reset thread-local
+            current_pid = os.getpid()
+            if not hasattr(self, '_local') or not hasattr(self._local, 'pid') or self._local.pid != current_pid:
+                logger.warning(f"Resetting WandbManager thread-local for process {current_pid}")
+                self._local = threading.local()
+                self._set_default_attributes()
+            
+            # Ensure all attributes exist in any case
+            self._ensure_attributes()
+                
+            # Call parent initialization
             super()._initialize_process_local(config)
 
             effective_config = config if config is not None else self._config
@@ -94,20 +107,40 @@ class WandbManager(BaseManager):
             logger.error(traceback.format_exc())
             raise
 
+    def _ensure_attributes(self):
+        """Ensure all required attributes exist."""
+        if not hasattr(self._local, 'enabled'):
+            self._local.enabled = False
+        if not hasattr(self._local, 'pid'):
+            self._local.pid = os.getpid()
+        if not hasattr(self._local, 'run'):
+            self._local.run = None
+        if not hasattr(self._local, 'start_time'):
+            self._local.start_time = None
+        if not hasattr(self._local, 'project'):
+            self._local.project = "default_project"
+        if not hasattr(self._local, 'entity'):
+            self._local.entity = None
+        if not hasattr(self._local, 'initialized'):
+            self._local.initialized = False
+
     def _log_process_info(self) -> None:
         """Log current process and W&B state information."""
-        logger.debug(
-            f"\nProcess Info:\n"
-            f"- PID: {self._local.pid}\n"
-            f"- PPID: {os.getppid()}\n"
-            f"- Thread: {threading.current_thread().name}\n"
-            f"\nWandb State:\n"
-            f"- WANDB_AVAILABLE: {WANDB_AVAILABLE}\n"
-            f"- enabled: {self._local.enabled}\n"
-            f"- current run: {self._local.run.id if self._local.run else None}\n"
-            f"\nEnvironment Variables:\n"
-            f"{json.dumps({k: v for k, v in os.environ.items() if 'WANDB' in k}, indent=2)}"
-        )
+        if hasattr(self._local, 'pid'):
+            logger.debug(
+                f"\nProcess Info:\n"
+                f"- PID: {self._local.pid}\n"
+                f"- PPID: {os.getppid()}\n"
+                f"- Thread: {threading.current_thread().name}\n"
+                f"\nWandb State:\n"
+                f"- WANDB_AVAILABLE: {WANDB_AVAILABLE}\n"
+                f"- enabled: {self._local.enabled}\n"
+                f"- current run: {getattr(self._local, 'run', None).id if getattr(self._local, 'run', None) else None}\n"
+                f"\nEnvironment Variables:\n"
+                f"{json.dumps({k: v for k, v in os.environ.items() if 'WANDB' in k}, indent=2)}"
+            )
+        else:
+            logger.debug("PID attribute not found in _local")
 
     def cleanup_run(self) -> None:
         """Clean up current W&B run."""
@@ -160,12 +193,21 @@ class WandbManager(BaseManager):
             self.cleanup_run()
 
     def init_trial(self, trial_number: int) -> None:
-        """
-        Initialize W&B run for a trial.
-
-        Args:
-            trial_number: Trial number to track
-        """
+        """Initialize W&B run for a trial."""
+        # Add safety check for _local attributes
+        if not hasattr(self, '_local'):
+            logger.warning(f"WandbManager._local not initialized, creating it")
+            self._local = threading.local()
+            self._local.pid = os.getpid()
+            self._local.enabled = False
+            self._local.run = None
+            self._local.start_time = None
+        
+        # Add safety check for enabled attribute
+        if not hasattr(self._local, 'enabled'):
+            logger.warning(f"WandbManager._local.enabled not initialized, setting to False")
+            self._local.enabled = False
+    
         logger.debug(f"\nInitializing W&B for trial {trial_number}")
         self._log_process_info()
 
@@ -365,11 +407,21 @@ class WandbManager(BaseManager):
     def cleanup(self) -> None:
         """Clean up wandb manager resources."""
         try:
+            # Ensure _local is initialized
+            if not hasattr(self, '_local'):
+                self._local = threading.local()
+                self._local.pid = os.getpid()
+                self._local.start_time = None
+                self._local.run = None
+                self._local.enabled = False
+
             self.cleanup_run()
             self._local.start_time = None
             self._local.enabled = False
             logger.info(f"Cleaned up WandbManager for process {self._local.pid}")
             super().cleanup()
+        except AttributeError as e:
+            logger.error(f"Error cleaning up WandbManager: {e}")
         except Exception as e:
             logger.error(f"Error cleaning up WandbManager: {str(e)}")
             logger.error(traceback.format_exc())

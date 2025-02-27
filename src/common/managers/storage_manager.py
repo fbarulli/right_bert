@@ -1,17 +1,14 @@
-
 # src/common/managers/storage_manager.py
 from __future__ import annotations
-import sqlite3
-import contextlib
 import logging
-from pathlib import Path
-from filelock import FileLock
-import json
-from typing import Dict, Any, Optional
-import optuna
-from optuna.samplers import TPESampler
+import os
+import threading
 import shutil
-import traceback
+import json
+import sqlite3
+import pickle  # Add missing import
+from pathlib import Path
+from typing import Dict, Any, Optional, List
 
 from src.common.managers.base_manager import BaseManager
 from src.common.managers.directory_manager import DirectoryManager
@@ -19,291 +16,194 @@ from src.common.managers.directory_manager import DirectoryManager
 logger = logging.getLogger(__name__)
 
 class StorageManager(BaseManager):
-    def __init__(self, directory_manager: DirectoryManager, config: Optional[Dict[str, Any]] = None):
-        self._directory_manager = directory_manager  # Set before super()
+    """Manager for handling storage operations like saving and loading files."""
+
+    def __init__(self, directory_manager: DirectoryManager, config: Dict[str, Any]):
+        """Initialize the StorageManager.
+        
+        Args:
+            directory_manager: The DirectoryManager to get directory paths
+            config: Application configuration
+        """
+        self._directory_manager = directory_manager
         super().__init__(config)
 
-    def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize process-local attributes.
-
-        Args:
-            config: Optional configuration dictionary that overrides the one from constructor
-        """
+    def _initialize_process_local(self, config: Dict[str, Any]) -> None:
+        """Initialize process-local state for storage management."""
         try:
             super()._initialize_process_local(config)
-
+            
+            # Ensure directory manager is initialized
             if not self._directory_manager.is_initialized():
                 raise RuntimeError("DirectoryManager must be initialized before StorageManager")
-
-            # Initialize paths
-            effective_config = config if config is not None else self._config
-            output_config = self.get_config_section(effective_config, 'output')
-            base_dir = Path(output_config['dir'])
-
-            self._local.storage_dir = base_dir / output_config['storage_dir']
-            self._local.storage_path = self._local.storage_dir / 'optuna.db'
-            self._local.lock_path = self._local.storage_dir / 'optuna.lock'
-            self._local.history_path = self._local.storage_dir / 'trial_history.json'
-            self._local.trials_dir = self._local.storage_dir / 'trials'
-            self._local.profiler_dir = self._local.storage_dir / 'profiler'
-
-            # Create directories
-            self._local.storage_dir.mkdir(parents=True, exist_ok=True)
-            self._local.trials_dir.mkdir(exist_ok=True)
-            self._local.profiler_dir.mkdir(exist_ok=True)
-
-            # Initialize database
-            self._initialize_storage()
-
-            logger.info(
-                f"StorageManager initialized for process {self._local.pid}:\n"
-                f"- Storage dir: {self._local.storage_dir}\n"
-                f"- Trials dir: {self._local.trials_dir}\n"
-                f"- Profiler dir: {self._local.profiler_dir}"
-            )
-
+            
+            # Set up the base storage directories
+            self._local.output_dir = self._directory_manager.get_output_dir()
+            self._local.cache_dir = self._directory_manager.get_cache_dir()
+            
+            # Add storage_dir for Optuna
+            self._local.storage_dir = os.path.join(self._local.output_dir, "optuna_storage")
+            os.makedirs(self._local.storage_dir, exist_ok=True)
+            
+            # Create directories if they don't exist
+            os.makedirs(self._local.output_dir, exist_ok=True)
+            os.makedirs(self._local.cache_dir, exist_ok=True)
+            
+            logger.info(f"StorageManager initialized for process {self._local.pid}")
+            
         except Exception as e:
             logger.error(f"Failed to initialize StorageManager: {str(e)}")
-            logger.error(traceback.format_exc())
+            logger.error("Stack trace:", exc_info=True)
             raise
 
-    def _initialize_storage(self) -> None:
-        """Initialize SQLite storage with proper settings."""
+    def save_json(self, data: Dict[str, Any], filename: str, subdir: Optional[str] = None) -> str:
+        """Save data as JSON.
+        
+        Args:
+            data: The data to save
+            filename: The name of the file
+            subdir: Optional subdirectory under output_dir
+            
+        Returns:
+            str: Path to the saved file
+        """
         self.ensure_initialized()
+        
+        save_path = self._get_save_path(filename, subdir)
+        
         try:
-            with contextlib.closing(sqlite3.connect(self._local.storage_path)) as conn:
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA synchronous=NORMAL")
-                conn.execute("PRAGMA busy_timeout=10000")
-                conn.commit()
-            logger.debug(f"Initialized SQLite storage at {self._local.storage_path}")
-
+            with open(save_path, 'w') as f:
+                json.dump(data, f, indent=2)
+            logger.debug(f"Saved JSON data to {save_path}")
+            return save_path
         except Exception as e:
-            logger.error(f"Error initializing storage: {str(e)}")
-            logger.error(traceback.format_exc())
+            logger.error(f"Failed to save JSON data to {save_path}: {str(e)}")
             raise
-
-    def create_study(
-        self,
-        study_name: str,
-        sampler: TPESampler
-    ) -> optuna.Study:
-        """
-        Create or load study with proper locking.
-
+            
+    def load_json(self, filename: str, subdir: Optional[str] = None) -> Dict[str, Any]:
+        """Load data from JSON.
+        
         Args:
-            study_name: Name of the study
-            sampler: Optuna sampler instance
-
+            filename: The name of the file
+            subdir: Optional subdirectory under output_dir
+            
         Returns:
-            optuna.Study: Created or loaded study
+            Dict[str, Any]: The loaded data
         """
         self.ensure_initialized()
+        
+        load_path = self._get_save_path(filename, subdir)
+        
         try:
-            storage_url = self.get_storage_url()
-            with FileLock(self._local.lock_path):
-                study = optuna.create_study(
-                    study_name=study_name,
-                    storage=storage_url,
-                    sampler=sampler,
-                    direction='minimize',
-                    load_if_exists=True
-                )
-            logger.info(f"Created/loaded study '{study_name}'")
-            return study
-
+            with open(load_path, 'r') as f:
+                data = json.load(f)
+            logger.debug(f"Loaded JSON data from {load_path}")
+            return data
         except Exception as e:
-            logger.error(f"Error creating study: {str(e)}")
-            logger.error(traceback.format_exc())
+            logger.error(f"Failed to load JSON data from {load_path}: {str(e)}")
             raise
-
-    def save_trial_history(self, trials: list[optuna.Trial]) -> None:
-        """
-        Save trial history to JSON file.
-
+            
+    def save_pickle(self, data: Any, filename: str, subdir: Optional[str] = None) -> str:
+        """Save data as pickle.
+        
         Args:
-            trials: List of completed trials
+            data: The data to save
+            filename: The name of the file
+            subdir: Optional subdirectory under output_dir
+            
+        Returns:
+            str: Path to the saved file
         """
         self.ensure_initialized()
+        
+        save_path = self._get_save_path(filename, subdir)
+        
         try:
-            history = {'trials': []}
-            for trial in trials:
-                if trial.state == optuna.trial.TrialState.COMPLETE:
-                    trial_data = {
-                        'number': trial.number,
-                        'params': trial.params,
-                        'value': trial.value,
-                        'state': trial.state.name,
-                        'datetime_start': (
-                            trial.datetime_start.isoformat()
-                            if trial.datetime_start else None
-                        ),
-                        'datetime_complete': (
-                            trial.datetime_complete.isoformat()
-                            if trial.datetime_complete else None
-                        ),
-                        'fail_reason': trial.user_attrs.get('fail_reason', None)
-                    }
-                    history['trials'].append(trial_data)
-
-            with open(self._local.history_path, 'w') as f:
-                json.dump(history, f, indent=2)
-            logger.info(f"Saved trial history to {self._local.history_path}")
-
+            with open(save_path, 'wb') as f:
+                pickle.dump(data, f)
+            logger.debug(f"Saved pickle data to {save_path}")
+            return save_path
         except Exception as e:
-            logger.error(f"Error saving trial history: {str(e)}")
-            logger.error(traceback.format_exc())
+            logger.error(f"Failed to save pickle data to {save_path}: {str(e)}")
             raise
-
-    def get_storage_url(self) -> str:
-        """
-        Get SQLite storage URL.
-
-        Returns:
-            str: Storage URL with timeout configuration
-        """
-        self.ensure_initialized()
-        return f"sqlite:///{self._local.storage_path}?timeout=60"
-
-    def get_trial_dir(self, trial_number: int) -> Path:
-        """
-        Get directory for a specific trial.
-
+            
+    def load_pickle(self, filename: str, subdir: Optional[str] = None) -> Any:
+        """Load data from pickle.
+        
         Args:
-            trial_number: Trial number
-
+            filename: The name of the file
+            subdir: Optional subdirectory under output_dir
+            
         Returns:
-            Path: Trial directory path
+            Any: The loaded data
         """
         self.ensure_initialized()
-        trial_dir = self._local.trials_dir / f'trial_{trial_number}'
-        trial_dir.mkdir(parents=True, exist_ok=True)
-        return trial_dir
-
-    def get_profiler_dir(self, trial_number: Optional[int] = None) -> Path:
-        """
-        Get profiler directory.
-
+        
+        load_path = self._get_save_path(filename, subdir)
+        
+        try:
+            with open(load_path, 'rb') as f:
+                data = pickle.load(f)
+            logger.debug(f"Loaded pickle data from {load_path}")
+            return data
+        except Exception as e:
+            logger.error(f"Failed to load pickle data from {load_path}: {str(e)}")
+            raise
+    
+    def _get_save_path(self, filename: str, subdir: Optional[str] = None) -> str:
+        """Get the full path for saving/loading files.
+        
         Args:
-            trial_number: Optional trial number for trial-specific profiling
-
+            filename: The name of the file
+            subdir: Optional subdirectory under output_dir
+            
         Returns:
-            Path: Profiler directory path
+            str: The full path
         """
-        self.ensure_initialized()
-        if trial_number is not None:
-            profiler_dir = self.get_trial_dir(trial_number) / 'profiler'
+        if subdir:
+            dir_path = os.path.join(self._local.output_dir, subdir)
+            os.makedirs(dir_path, exist_ok=True)
+            return os.path.join(dir_path, filename)
         else:
-            profiler_dir = self._local.profiler_dir
-        profiler_dir.mkdir(parents=True, exist_ok=True)
-        return profiler_dir
-
-    def cleanup_trial(self, trial_number: int) -> None:
-        """
-        Clean up trial directory.
-
-        Args:
-            trial_number: Trial number to clean up
+            return os.path.join(self._local.output_dir, filename)
+            
+    def get_output_dir(self) -> str:
+        """Get the output directory path.
+        
+        Returns:
+            str: The output directory path
         """
         self.ensure_initialized()
-        try:
-            trial_dir = self._local.trials_dir / f'trial_{trial_number}'
-            if trial_dir.exists():
-                shutil.rmtree(trial_dir)
-                logger.debug(f"Cleaned up trial directory: {trial_dir}")
-
-        except Exception as e:
-            logger.error(f"Error cleaning up trial {trial_number}: {str(e)}")
-            logger.error(traceback.format_exc())
-
-    def cleanup_profiler(self, trial_number: Optional[int] = None) -> None:
-        """
-        Clean up profiler directory.
-
-        Args:
-            trial_number: Optional trial number for trial-specific cleanup
+        return self._local.output_dir
+        
+    def get_cache_dir(self) -> str:
+        """Get the cache directory path.
+        
+        Returns:
+            str: The cache directory path
         """
         self.ensure_initialized()
-        try:
-            if trial_number is not None:
-                profiler_dir = self.get_trial_dir(trial_number) / 'profiler'
-            else:
-                profiler_dir = self._local.profiler_dir
-
-            if profiler_dir.exists():
-                shutil.rmtree(profiler_dir)
-                profiler_dir.mkdir(exist_ok=True)
-                logger.debug(f"Cleaned up profiler directory: {profiler_dir}")
-
-        except Exception as e:
-            logger.error(f"Error cleaning up profiler: {str(e)}")
-            logger.error(traceback.format_exc())
-
-    def log_database_status(self) -> None:
-        """Log current database status for debugging."""
+        return self._local.cache_dir
+        
+    @property
+    def storage_dir(self) -> str:
+        """Get the storage directory path for Optuna studies.
+        
+        Returns:
+            str: The storage directory path
+        """
         self.ensure_initialized()
-        try:
-            conn = sqlite3.connect(self._local.storage_path)
-            cursor = conn.cursor()
-
-            cursor.execute("SELECT COUNT(*) FROM trials")
-            total_trials = cursor.fetchone()[0]
-
-            cursor.execute(
-                "SELECT datetime_complete FROM trials "
-                "WHERE datetime_complete IS NOT NULL "
-                "ORDER BY datetime_complete DESC LIMIT 1"
-                )
-            last_modified = cursor.fetchone()
-
-            logger.info(
-                f"\nOptuna Database Status:\n"
-                f"- Location: {self._local.storage_path}\n"
-                f"- Total trials: {total_trials}\n"
-                f"- Last modified: {last_modified[0] if last_modified else 'Never'}"
-            )
-
-            conn.close()
-
-        except Exception as e:
-            logger.error(f"Error checking database status: {str(e)}")
-            logger.error(traceback.format_exc())
-
+        return self._local.storage_dir
+        
     def cleanup(self) -> None:
-        """Clean up storage manager resources."""
+        """Clean up StorageManager resources."""
         try:
-            # Ensure _local exists before proceeding
-            if not hasattr(self, '_local'):
-                logger.info("No local resources to clean up in StorageManager")
-                return
-
-            # Clean up trials_dir
-            if hasattr(self._local, 'trials_dir') and self._local.trials_dir and self._local.trials_dir.exists():
-                shutil.rmtree(self._local.trials_dir)
-                self._local.trials_dir.mkdir(exist_ok=True)
-
-            # Clean up profiler_dir
-            if hasattr(self._local, 'profiler_dir') and self._local.profiler_dir and self._local.profiler_dir.exists():
-                shutil.rmtree(self._local.profiler_dir)
-                self._local.profiler_dir.mkdir(exist_ok=True)
-
-            # Clean up storage_path (database)
-            if hasattr(self._local, 'storage_path') and self._local.storage_path and self._local.storage_path.exists():
-                self._local.storage_path.unlink()
-                self._initialize_storage()  # Reinitialize after cleanup
-
-            # Clean up history_path
-            if hasattr(self._local, 'history_path') and self._local.history_path and self._local.history_path.exists():
-                self._local.history_path.unlink()
-
-            logger.info(f"Cleaned up StorageManager for process {self._local.pid}")
+            # Use a safety check for pid attribute
+            pid = getattr(self._local, 'pid', os.getpid()) if hasattr(self, '_local') else os.getpid()
+            logger.info(f"Cleaned up StorageManager for process {pid}")
             super().cleanup()
-
         except Exception as e:
             logger.error(f"Error cleaning up StorageManager: {str(e)}")
-            logger.error(traceback.format_exc())
             raise
-
 
 __all__ = ['StorageManager']

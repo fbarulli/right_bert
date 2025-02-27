@@ -1,4 +1,3 @@
-
 # src/common/managers/optuna_manager.py
 from __future__ import annotations
 import logging
@@ -15,6 +14,7 @@ from src.common.managers.base_manager import BaseManager
 from src.common.managers.storage_manager import StorageManager
 from src.common.study.study_storage import StudyStorage
 from src.common.study.study_config import StudyConfig
+from dependency_injector.providers import Singleton
 
 logger = logging.getLogger(__name__)
 
@@ -29,44 +29,50 @@ class OptunaManager(BaseManager):
     - Result collection and storage
     """
 
-    def __init__(
-        self,
-        storage_manager: StorageManager,
-        study_name: str,
-        config: Optional[Dict[str, Any]] = None
-    ):
-        """
-        Initialize OptunaManager.
-
-        Args:
-            storage_manager: Injected StorageManager instance
-            study_name: Name of the Optuna study
-            config: Optional configuration dictionary
-        """
-        if not study_name:
-            raise ValueError("OptunaManager requires study_name to be set")
-        self._storage_manager = storage_manager  # Set before super()
-        self.study_name = study_name
+    def __init__(self, config, storage_manager, parameter_manager):
+        """Initialize OptunaManager with dependencies."""
+        self._storage_manager = storage_manager
+        self._parameter_manager = parameter_manager
+        self._local = threading.local()
+        self._setup_process_local(config)  # Call setup before super()
         super().__init__(config)
-        # Initialize these after super() since self._local is set by BaseManager
+        self._initialize_process_local(config)  # Ensure initialization
+    
+    def _setup_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Setup process-local Optuna attributes."""
+        if not hasattr(self, '_local'):
+            self._local = threading.local()
         self._local.study = None
+        self._local.study_config = None
+        self._local.storage = None
+        self._local.storage_url = None
         self._local.worker_queue = None
         self._local.result_queue = None
         self._local.active_workers = {}
+        self._local.initialized = False
+        self._local.pid = os.getpid()
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Initialize process-local attributes.
-
-        Args:
-            config: Optional configuration dictionary that overrides the one from constructor
-        """
+        """Initialize process-local attributes."""
         try:
             super()._initialize_process_local(config)
 
-            if not self._storage_manager.is_initialized():
-                raise RuntimeError("StorageManager must be initialized before OptunaManager")
-
+            # Add validation with better error messages
+            if not hasattr(self, '_storage_manager') or self._storage_manager is None:
+                raise RuntimeError("StorageManager not provided to OptunaManager")
+            if not hasattr(self, '_parameter_manager') or self._parameter_manager is None:
+                raise RuntimeError("ParameterManager not provided to OptunaManager")
+                
+            # Validate initialization
+            if isinstance(self._storage_manager, Singleton):
+                if not self._storage_manager().is_initialized():
+                    raise RuntimeError("Storage manager failed to initialize")
+            else:
+                if not self._storage_manager.is_initialized():
+                    raise RuntimeError("Storage manager failed to initialize")
+            if not self._parameter_manager.is_initialized():
+                self._parameter_manager._initialize_process_local(config)
+            
             # Initialize study configuration and storage
             effective_config = config if config is not None else self._config
             self._local.study_config = StudyConfig(effective_config)
@@ -74,9 +80,12 @@ class OptunaManager(BaseManager):
             self._local.storage = StudyStorage(self._storage_manager.storage_dir)
             self._local.storage_url = self._local.storage.get_storage_url()
 
+            # Use instance variable directly to avoid circular dependency
+            study_name = effective_config['training']['study_name']
+
             logger.info(
                 f"\nInitializing OptunaManager for process {self._local.pid}:\n"
-                f"- Study name: {self.study_name}\n"
+                f"- Study name: {study_name}\n"
                 f"- Storage URL: {self._local.storage_url}\n"
                 f"- Sampler type: {type(self._local.study_config.sampler)}\n"
                 f"- Sampler parameters: {self._local.study_config.sampler.__dict__}"
@@ -84,7 +93,7 @@ class OptunaManager(BaseManager):
 
             # Create or load study
             self._local.study = optuna.create_study(
-                study_name=self.study_name,
+                study_name=study_name,
                 storage=self._local.storage_url,
                 sampler=self._local.study_config.sampler,
                 direction='minimize',
@@ -98,10 +107,25 @@ class OptunaManager(BaseManager):
 
             self._log_study_state()
 
+            # Set initialized flag to True
+            self._local.initialized = True
+
         except Exception as e:
             logger.error(f"Failed to initialize OptunaManager: {str(e)}")
             logger.error(traceback.format_exc())
             raise
+
+    @property
+    def study_name(self) -> str:
+        """Get the study name from config."""
+        self.ensure_initialized()
+        return self._config['training']['study_name']
+
+    @property
+    def study(self) -> optuna.Study:
+        """Get the Optuna study object."""
+        self.ensure_initialized()
+        return self._local.study
 
     def _log_study_state(self) -> None:
         """Log current state of the study."""
@@ -294,9 +318,11 @@ class OptunaManager(BaseManager):
             logger.info("Optimization completed")
 
     def cleanup(self) -> None:
+        """Clean up OptunaManager resources."""
         try:
             if hasattr(self, '_local'):
-                self._cleanup_workers()
+                if hasattr(self._local, 'active_workers'):
+                    self._cleanup_workers()
                 self._local.study = None
                 self._local.worker_queue = None
                 self._local.result_queue = None

@@ -1,5 +1,3 @@
-
-# src/common/utils.py
 # src/common/utils.py
 from __future__ import annotations
 
@@ -22,7 +20,10 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
 def setup_logging(config: Dict[str, Any]) -> None:
-    import coloredlogs
+    try:
+        import coloredlogs
+    except ImportError:
+        coloredlogs = None
 
     log_config = config['logging'] if 'logging' in config else config['training']
     level_str = log_config['level'].upper()
@@ -191,10 +192,19 @@ def chunk_file(
             yield chunk
 
 def init_worker():
-    logger.info(f"Initializing worker process: {os.getpid()}")
+    """Initialize worker process resources."""
+    from src.common.process_registry import register_process
+    
+    # Register this worker process
+    pid = os.getpid()
+    register_process(process_type='worker')
+    
+    logger.info(f"Initializing worker process: {pid}")
+    
+    # Initialize CUDA if available
     if torch.cuda.is_available():
         torch.cuda.init()
-        logger.info(f"CUDA initialized in worker process: {os.getpid()}")
+        logger.info(f"CUDA initialized in worker process: {pid}")
 
 def get_worker_init_fn(num_workers: int) -> Optional[callable]:
     if num_workers > 0:
@@ -206,9 +216,21 @@ def get_cuda_manager():
     return CUDAManager() # _config is likely not needed here anymore
 
 def get_tensor_manager():
-    from src.common.managers.tensor_manager import TensorManager # Local import to avoid cycle
-    return TensorManager() # _config is likely not needed here anymore
-
+    """Get or create a TensorManager instance for the current process."""
+    try:
+        # Import here to avoid circular imports
+        from src.common.managers import get_tensor_manager as get_manager
+        return get_manager()
+    except Exception as e:
+        # Fallback to direct instantiation if manager system not available
+        from src.common.managers.tensor_manager import TensorManager
+        from src.common.managers.cuda_manager import CUDAManager
+        
+        cuda_manager = CUDAManager({})  # Create a basic CUDA manager
+        cuda_manager._initialize_process_local({})
+        
+        config = {}  # Empty config as fallback
+        return TensorManager(config=config, cuda_manager=cuda_manager)
 
 from .config_utils import load_yaml_config
 __all__ = [

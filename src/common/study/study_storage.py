@@ -1,40 +1,44 @@
-# src/common/study/study_storage.py
-# src/common/study/study_storage.py
 from __future__ import annotations
+import os
 import logging
 import json
 import sqlite3
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
-import os
+from src.common.study.data_types import TrialData
 
 logger = logging.getLogger(__name__)
 
 class StudyStorage:
-    """Manages Optuna study storage."""
-
-    def __init__(self, base_dir: Path):
-        """
-        Initialize StudyStorage.
-
+    """Storage for Optuna studies."""
+    
+    def __init__(self, base_dir: str):
+        """Initialize the study storage.
+        
         Args:
-            base_dir: Base directory for storing study data (database, history).
+            base_dir: Base directory for storing study data
         """
-        self.base_dir = base_dir
-        self.storage_path = base_dir / 'storage' / 'optuna.db' # ADDED storage dir to path
-        self.history_path = base_dir / 'trial_history.json'
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True) # Ensure dir exists
-
-
+        # Convert string path to Path object or use os.path.join
+        self.storage_path = os.path.join(base_dir, 'storage', 'optuna.db')
+        
+        # Create directory if it doesn't exist
+        storage_dir = os.path.dirname(self.storage_path)
+        os.makedirs(storage_dir, exist_ok=True)
+        
+        # Path for trial history
+        base_path = Path(base_dir)
+        self.history_path = base_path / 'trial_history.json'
+        
+        logger.info(f"Initialized study storage at {self.storage_path}")
         self._init_database_schema()
-
+        
     def _init_database_schema(self):
         """Initialize the database schema if it doesn't exist."""
         try:
             conn = sqlite3.connect(self.storage_path)
             cursor = conn.cursor()
-
+            
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS studies (
                     study_id INTEGER PRIMARY KEY,
@@ -69,11 +73,11 @@ class StudyStorage:
         except Exception as e:
             logger.error(f"Error initializing database schema: {e}")
             raise
-
+            
     def get_storage_url(self) -> str:
         """Get SQLite URL for Optuna storage."""
         return f"sqlite:///{self.storage_path}?timeout=60"
-
+    
     def save_trial_history(self, trials: list) -> None:
         """Save trial history to JSON file."""
         try:
@@ -93,23 +97,23 @@ class StudyStorage:
 
             with open(self.history_path, 'w') as f:
                 json.dump(history, f, indent=2)
-            logger.info(f"\nSaved trial history to {self.history_path}")
+            logger.info(f"Saved trial history to {self.history_path}")
         except Exception as e:
             logger.error(f"Error saving trial history: {str(e)}")
-
+            
     def log_database_status(self) -> None:
         """Log current database status (for debugging)."""
         try:
             conn = sqlite3.connect(self.storage_path)
             cursor = conn.cursor()
-
+            
             cursor.execute("SELECT COUNT(*) FROM trials")
             total_trials = cursor.fetchone()[0]
-
+            
             cursor.execute("SELECT datetime_complete FROM trials WHERE datetime_complete IS NOT NULL ORDER BY datetime_complete DESC LIMIT 1")
             last_modified = cursor.fetchone()
-
-            logger.info(f"\nOptuna Database Status:")
+            
+            logger.info(f"Optuna Database Status:")
             logger.info(f"Location: {self.storage_path}")
             logger.info(f"Total trials in DB: {total_trials}")
             if last_modified:
