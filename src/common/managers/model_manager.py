@@ -1,4 +1,3 @@
-
 # src/common/managers/model_manager.py
 from __future__ import annotations
 import os
@@ -72,14 +71,51 @@ class ModelManager(BaseManager):
             config: Optional configuration dictionary that overrides the one from constructor
         """
         try:
+            # Call parent initialization first
             super()._initialize_process_local(config)
-
-            # Validate dependencies using base manager method
-            self._validate_dependency(self._cuda_manager, "CUDAManager")
-            self._validate_dependency(self._tokenizer_manager, "TokenizerManager")
-
-            logger.info(f"ModelManager initialized for process {self._local.pid}")
-
+            
+            # Validate dependencies with proper error handling
+            try:
+                # Check CUDA manager dependency
+                self._validate_dependency(self._cuda_manager, "CUDAManager")
+                
+                # Check tokenizer manager dependency  
+                self._validate_dependency(self._tokenizer_manager, "TokenizerManager")
+                
+                # Get CUDA device from manager
+                self._local.device = self._cuda_manager.get_device()
+                self._local.device_type = self._local.device.type
+                
+                logger.info(f"ModelManager initialized for process {self._local.pid} using device {self._local.device}")
+                
+            except AttributeError as e:
+                logger.error(f"AttributeError in dependency validation: {e}")
+                logger.error(traceback.format_exc())
+                
+                # Handle the missing _validate_dependency method
+                if "'ModelManager' object has no attribute '_validate_dependency'" in str(e):
+                    logger.warning("Using manual dependency checking as fallback")
+                    
+                    # Manual dependency checks
+                    if self._cuda_manager is None:
+                        raise RuntimeError("CUDAManager dependency is missing")
+                    if not hasattr(self._cuda_manager, 'is_initialized') or not self._cuda_manager.is_initialized():
+                        raise RuntimeError("CUDAManager must be initialized before ModelManager")
+                    
+                    if self._tokenizer_manager is None:
+                        raise RuntimeError("TokenizerManager dependency is missing")
+                    if not hasattr(self._tokenizer_manager, 'is_initialized') or not self._tokenizer_manager.is_initialized():
+                        raise RuntimeError("TokenizerManager must be initialized before ModelManager")
+                    
+                    # Get device from CUDA manager
+                    self._local.device = self._cuda_manager.get_device()
+                    self._local.device_type = self._local.device.type
+                    
+                    logger.info(f"ModelManager initialized (with fallback) for process {self._local.pid} using device {self._local.device}")
+                else:
+                    # Re-raise if it's a different AttributeError
+                    raise
+                
         except Exception as e:
             logger.error(f"Failed to initialize ModelManager: {str(e)}")
             logger.error(traceback.format_exc())

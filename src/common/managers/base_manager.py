@@ -166,3 +166,40 @@ class BaseManager:
             self.cleanup()
         except:
             pass  # Ignore cleanup errors during deletion
+
+    def _validate_dependency(self, dependency: Any, name: str) -> None:
+        """
+        Validate that a dependency manager is properly initialized.
+        
+        Args:
+            dependency: The manager to validate
+            name: Name of the manager for error messages
+            
+        Raises:
+            RuntimeError: If the dependency is missing or not initialized
+        """
+        if dependency is None:
+            raise RuntimeError(f"{name} dependency is missing")
+            
+        # Check if the dependency has an is_initialized method
+        if hasattr(dependency, 'is_initialized') and callable(dependency.is_initialized):
+            if not dependency.is_initialized():
+                # Try to initialize it
+                logger.warning(f"{name} is not initialized, attempting to initialize it")
+                try:
+                    if hasattr(dependency, '_initialize_process_local') and callable(dependency._initialize_process_local):
+                        dependency._initialize_process_local(self._config)
+                        # Check again
+                        if not dependency.is_initialized():
+                            raise RuntimeError(f"{name} failed to initialize after attempt")
+                    else:
+                        raise RuntimeError(f"{name} has no _initialize_process_local method")
+                except Exception as e:
+                    logger.error(f"Failed to initialize {name}: {e}")
+                    raise RuntimeError(f"{name} must be initialized before {self.__class__.__name__}")
+        else:
+            # If no is_initialized method, check _local.initialized directly
+            if not hasattr(dependency, '_local') or not hasattr(dependency._local, 'initialized') or not dependency._local.initialized:
+                raise RuntimeError(f"{name} must be initialized before {self.__class__.__name__}")
+                
+        logger.debug(f"Dependency validation successful for {name}")
