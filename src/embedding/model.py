@@ -198,6 +198,17 @@ def embedding_model_factory(
     trial: Optional[optuna.Trial] = None
 ) -> EmbeddingBert:
     """Factory function for creating an EmbeddingBert model."""
+    # Get CUDA manager to handle device selection
+    try:
+        from src.common.managers import get_cuda_manager
+        cuda_manager = get_cuda_manager()
+        device = cuda_manager.get_device()
+    except Exception as e:
+        logger.warning(f"Error getting CUDA manager: {e}, falling back to auto device selection")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+    logger.info(f"Creating model on device: {device}")
+
     model_config = BertConfig.from_pretrained(config['model']['name'])
 
     if trial:
@@ -217,11 +228,26 @@ def embedding_model_factory(
 
     log_config = LogConfig(level=config['training'].get('log_level', 'log'))
 
+    # Create model
     model = EmbeddingBert(
         config=model_config,
-        tie_weights=config['model']['tie_weights'],
+        tie_weights=config['model'].get('tie_weights', True),
         log_config=log_config
     )
+    
+    # Explicitly move model to the correct device
+    model = model.to(device)
+    
+    # Verify model device
+    model_device = next(model.parameters()).device
+    logger.info(f"Model initialized on device: {model_device}")
+    
+    if str(model_device) == "cpu" and torch.cuda.is_available():
+        logger.warning("Model is on CPU despite CUDA being available! Forcing move to CUDA...")
+        model = model.cuda()
+        new_device = next(model.parameters()).device
+        logger.info(f"Model forcibly moved to: {new_device}")
+    
     return cast(EmbeddingBert, model)
 
 __all__ = [
