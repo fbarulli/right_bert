@@ -74,6 +74,7 @@ def train_model(config: Dict[str, Any], wandb_manager=None) -> None:
             get_directory_manager
         )
         from src.common.managers.process_init import ensure_process_initialized
+        from src.common.managers.emergency_init import force_initialize_data_manager
 
         # Ensure all managers are initialized in this process
         logger.debug(f"Ensuring process {os.getpid()} is properly initialized in train_model()")
@@ -86,7 +87,18 @@ def train_model(config: Dict[str, Any], wandb_manager=None) -> None:
         # Get managers - they should now be properly initialized
         cuda_manager = get_cuda_manager()
         tokenizer_manager = get_tokenizer_manager()
+        
+        # Special handling for data_manager
         data_manager = get_data_manager()
+        if not data_manager.is_initialized():
+            logger.critical(f"DataManager not initialized after ensure_process_initialized. Using emergency initialization")
+            force_initialize_data_manager(config)
+        
+        # Verify data_manager is initialized 
+        if not data_manager.is_initialized():
+            logger.critical("DataManager still not initialized. This is a fatal issue.")
+            raise RuntimeError("Cannot continue without initialized DataManager")
+            
         model_manager = get_model_manager()
         directory_manager = get_directory_manager()
         

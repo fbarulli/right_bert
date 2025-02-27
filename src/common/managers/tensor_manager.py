@@ -7,6 +7,7 @@ import os  # Add missing import
 from typing import Optional, Union, List, Tuple, Dict, Any
 import numpy as np
 import threading
+import sys
 
 from src.common.managers.base_manager import BaseManager
 from src.common.managers.cuda_manager import CUDAManager

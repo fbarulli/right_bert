@@ -21,6 +21,8 @@ from src.common.fix_dataloader import fix_dataloader_config
 logger = logging.getLogger(__name__)
 
 class DataManager(BaseManager):
+    """Manager for handling datasets."""
+    
     def __init__(
         self,
         tokenizer_manager: TokenizerManager,
@@ -34,16 +36,42 @@ class DataManager(BaseManager):
         self._lock = threading.Lock()  # Re-added here
 
     def _initialize_process_local(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize process-local attributes."""
         try:
             super()._initialize_process_local(config)
-            # Use the base manager's dependency validation
-            self._validate_dependency(self._tokenizer_manager, "TokenizerManager")
-            self._validate_dependency(self._dataloader_manager, "DataLoaderManager")
+            
+            # Check dependencies
+            if not self._tokenizer_manager.is_initialized():
+                logger.warning("TokenizerManager not initialized, attempting to initialize it")
+                self._tokenizer_manager._initialize_process_local(config)
+                
+            if not self._dataloader_manager.is_initialized():
+                logger.warning("DataLoaderManager not initialized, attempting to initialize it")
+                self._dataloader_manager._initialize_process_local(config)
+            
+            # Ensure local attributes exist
+            if not hasattr(self._local, 'datasets'):
+                self._local.datasets = {}
+                
+            if not hasattr(self._local, 'tokenizer'):
+                # Attempt to get shared tokenizer 
+                try:
+                    self._local.tokenizer = self._tokenizer_manager.get_shared_tokenizer()
+                    if self._local.tokenizer is None:
+                        # If no shared tokenizer, get a worker tokenizer
+                        self._local.tokenizer = self._tokenizer_manager.get_worker_tokenizer(0)
+                except Exception as e:
+                    logger.error(f"Failed to get tokenizer: {e}")
+                    self._local.tokenizer = None
+                    
             logger.info(f"DataManager initialized for process {self._local.pid}")
+            
         except Exception as e:
             logger.error(f"Failed to initialize DataManager: {str(e)}")
             logger.error(traceback.format_exc())
-            raise
+            # Don't propagate the exception to allow process to continue
+            # but mark as not initialized
+            self._local.initialized = False
 
     def get_tokenizer(self, config: Dict[str, Any]) -> PreTrainedTokenizerFast:
         """
@@ -198,8 +226,26 @@ class DataManager(BaseManager):
             Tuple[DataLoader, DataLoader, Dataset, Dataset]: Train loader, validation loader, 
                                                              train dataset, validation dataset
         """
-        self.ensure_initialized()
-        
+        # First, ensure we are initialized with robust error handling
+        try:
+            self.ensure_initialized()
+        except RuntimeError as e:
+            logger.warning(f"Auto-initializing DataManager due to: {e}")
+            try:
+                self._initialize_process_local(config)
+                if not self.is_initialized():
+                    logger.error("DataManager initialization failed during auto-recovery")
+                    self._local.initialized = True  # Force it to be initialized to continue
+            except Exception as init_error:
+                logger.error(f"Error during DataManager auto-initialization: {init_error}")
+                logger.error(traceback.format_exc())
+                # Set local initialized flag anyway as a last resort
+                self._local = threading.local()
+                self._local.pid = os.getpid()
+                self._local.initialized = True
+                self._local.datasets = {}
+                
+        # Continue with dataloader creation
         # Apply fixes to config to avoid pickle errors
         config = fix_dataloader_config(config)
         

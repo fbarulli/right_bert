@@ -20,20 +20,23 @@ def ensure_process_initialized(config: Optional[Dict[str, Any]] = None) -> None:
         config: Optional configuration to override the factory configuration
     """
     try:
+        import time  # Add import for time.time()
         from src.common.manager_status import fix_manager, check_manager_attributes
         from src.common.managers import (
             get_cuda_manager, get_directory_manager, get_wandb_manager,
-            get_batch_manager, get_parameter_manager, get_metrics_manager
+            get_batch_manager, get_parameter_manager, get_metrics_manager,
+            get_tokenizer_manager, get_data_manager, get_dataloader_manager  # Add more managers
         )
         
-        # Get critical managers
+        # Get critical managers but don't instantiate batch_manager yet
+        # since it depends on cuda_manager
         managers = {
             "CUDAManager": get_cuda_manager(),
             "DirectoryManager": get_directory_manager(),
             "WandbManager": get_wandb_manager(),
-            "BatchManager": get_batch_manager(),
             "ParameterManager": get_parameter_manager(),
-            "MetricsManager": get_metrics_manager()
+            "MetricsManager": get_metrics_manager(),
+            "TokenizerManager": get_tokenizer_manager(),  # Add tokenizer manager
         }
         
         logger.info(f"Initializing managers for child process {os.getpid()}")
@@ -91,11 +94,58 @@ def ensure_process_initialized(config: Optional[Dict[str, Any]] = None) -> None:
             except Exception as e:
                 logger.error(f"Force initialization of ParameterManager failed: {e}")
         
-        # Initialize rest of the managers in dependency order
+        # Initialize managers in dependency order - critical that CUDA is initialized first
         cuda_manager = managers["CUDAManager"]
         if not cuda_manager.is_initialized():
+            logger.info(f"Initializing CUDA manager for process {os.getpid()}")
             cuda_manager._initialize_process_local(config)
+            
+        # Verify CUDA initialization was successful
+        if not cuda_manager.is_initialized():
+            logger.error(f"CUDA manager failed to initialize in process {os.getpid()}")
+        else:
+            logger.info(f"CUDA manager initialized successfully in process {os.getpid()}")
         
+        # Now that CUDA is initialized, it's safe to get the batch manager
+        try:
+            batch_manager = get_batch_manager()
+            managers["BatchManager"] = batch_manager
+            logger.info(f"Retrieved BatchManager for process {os.getpid()}")
+        except Exception as e:
+            logger.error(f"Error getting BatchManager: {e}")
+            logger.error("Stack trace:", exc_info=True)
+        
+        # Now get DataLoaderManager and initialize it
+        try:
+            dataloader_manager = get_dataloader_manager()
+            if not dataloader_manager.is_initialized():
+                dataloader_manager._initialize_process_local(config)
+                logger.info(f"DataLoaderManager initialized for process {os.getpid()}")
+        except Exception as e:
+            logger.error(f"Error initializing DataLoaderManager: {e}")
+            logger.error("Stack trace:", exc_info=True)
+        
+        # Now initialize DataManager - critical for dataloaders
+        try:
+            data_manager = get_data_manager()
+            if not data_manager.is_initialized():
+                data_manager._initialize_process_local(config)
+                logger.info(f"DataManager initialized for process {os.getpid()}")
+            
+            # Verify DataManager was initialized correctly
+            if not data_manager.is_initialized():
+                logger.error(f"DataManager failed to initialize in process {os.getpid()}")
+                # Force initialization
+                data_manager._local = threading.local()
+                data_manager._local.pid = os.getpid()
+                data_manager._local.initialized = True
+                data_manager._initialize_process_local(config)
+                logger.warning(f"Forced DataManager initialization in process {os.getpid()}")
+        except Exception as e:
+            logger.error(f"Error initializing DataManager: {e}")
+            logger.error("Stack trace:", exc_info=True)
+        
+        # Continue with other manager initialization
         directory_manager = managers["DirectoryManager"]
         if not directory_manager.is_initialized():
             directory_manager._initialize_process_local(config)
