@@ -385,8 +385,8 @@ class MetricsManager(BaseManager):
 
     def compute_classification_metrics(
         self,
-        outputs: Dict[str, torch.Tensor>,
-        batch: Dict[str, torch.Tensor>
+        outputs: Dict[str, torch.Tensor],  # Fixed: changed > to ]
+        batch: Dict[str, torch.Tensor]     # Fixed: changed > to ]
     ) -> Dict[str, float]:
         """
         Compute classification metrics.
